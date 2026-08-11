@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}ICT News · ICT Lab{% endblock %}
+
+{% macro render_articles(articles, empty_message) %}
+  {% if articles %}
+    <ul class="news-list">
+      {% for article in articles %}
+        <li class="news-item">
+          <h3>
+            <a href="{{ article.original_url }}" target="_blank" rel="noopener noreferrer">
+              {{ article.title }}
+            </a>
+          </h3>
+          <p class="news-meta">
+            {{ article.source_name }} · {{ article.category or "기타" }} ·
+            {% if article.published_at %}
+              <time datetime="{{ article.published_at.isoformat() }}">
+                {{ article.published_at.strftime("%Y-%m-%d %H:%M") }}
+              </time>
+            {% else %}
+              Published time unavailable
+            {% endif %}
+          </p>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>{{ empty_message }}</p>
+  {% endif %}
+{% endmacro %}
+
+{% block content %}
+  <section class="news-page">
+    <p class="eyebrow">Latest updates</p>
+    <h1>ICT News</h1>
+
+    <nav class="news-filters" aria-label="뉴스 카테고리">
+      <a href="{{ url_for('web.news') }}"{% if not selected_category %} aria-current="page"{% endif %}>전체</a>
+      {% for category in category_options %}
+        <a href="{{ url_for('web.news', category=category) }}"{% if selected_category == category %} aria-current="page"{% endif %}>
+          {{ category }}
+        </a>
+      {% endfor %}
+    </nav>
+
+    {% if selected_category %}
+      <section class="news-section">
+        <h2>{{ selected_category }}</h2>
+        {{ render_articles(filtered_articles, "해당 카테고리의 뉴스가 없습니다.") }}
+      </section>
+    {% else %}
+      <section id="domestic-news" class="news-section">
+        <h2>국내 뉴스</h2>
+        {{ render_articles(domestic_articles, "아직 수집된 국내 뉴스가 없습니다.") }}
+      </section>
+
+      <section id="international-news" class="news-section">
+        <h2>해외 뉴스</h2>
+        {{ render_articles(international_articles, "No international news has been collected yet.") }}
+      </section>
+    {% endif %}
+  </section>
+{% endblock %}

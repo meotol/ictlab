@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="ICT Lab at ict.metol.cloud">
+    <title>{% block title %}ICT Lab{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="{{ url_for('web.home') }}">ICT Lab</a>
+      <nav aria-label="Main navigation">
+        <ul>
+          <li><a href="{{ url_for('web.home') }}" aria-current="page">Home</a></li>
+          <li><a href="{{ url_for('web.news') }}">ICT News</a></li>
+          <li><a href="#">Technology</a></li>
+          <li><a href="#">Professional Engineer</a></li>
+          <li><a href="#">Archive</a></li>
+          <li><a href="#">About</a></li>
+        </ul>
+      </nav>
+    </header>
+    <main>{% block content %}{% endblock %}</main>
+  </body>
+</html>
