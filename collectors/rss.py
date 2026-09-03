@@ -86,7 +86,12 @@ def collect_rss(
     duplicates = 0
 
     for source in sources:
-        for item in parse_feed(fetcher(source.url)):
+        try:
+            items = parse_feed(fetcher(source.url))
+        except Exception as exc:
+            print(f"RSS 수집 실패 [{source.name}]: {exc}")
+            continue
+        for item in items:
             article = NewsArticle(
                 title=item.title,
                 original_url=item.original_url,
