@@ -1,11 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="ICT Lab at ict.metol.cloud">
     <title>{% block title %}ICT Lab{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260815-1') }}">
   </head>
   <body>
     <header class="site-header">
@@ -15,7 +16,7 @@
           <li><a href="{{ url_for('web.home') }}" aria-current="page">Home</a></li>
           <li><a href="{{ url_for('web.news') }}">ICT News</a></li>
           <li><a href="#">Technology</a></li>
-          <li><a href="#">Professional Engineer</a></li>
+          <li><a href="{{ url_for('web.professional_engineer') }}">Professional Engineer</a></li>
           <li><a href="#">Archive</a></li>
           <li><a href="#">About</a></li>
         </ul>

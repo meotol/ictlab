@@ -35,6 +35,26 @@
     <p class="eyebrow">Latest updates</p>
     <h1>ICT News</h1>
 
+    {% if briefings %}
+      <section class="news-section briefing-section">
+        <h2>ICT 뉴스 브리핑</h2>
+        <ul class="content-list">
+          {% for briefing in briefings %}
+            <li>
+              <a href="{{ url_for('web.content_detail', content_id=briefing.id) }}">{{ briefing.title }}</a>
+              <time datetime="{{ briefing.authored_at.isoformat() }}">{{ briefing.authored_at.strftime("%Y-%m-%d") }}</time>
+            </li>
+          {% endfor %}
+        </ul>
+        {% if has_more_briefings %}
+          <a
+            class="briefing-more"
+            href="{{ url_for('web.news', category=selected_category, briefings='all') }}"
+          >브리핑 더보기</a>
+        {% endif %}
+      </section>
+    {% endif %}
+
     <nav class="news-filters" aria-label="뉴스 카테고리">
       <a href="{{ url_for('web.news') }}"{% if not selected_category %} aria-current="page"{% endif %}>전체</a>
       {% for category in category_options %}

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}콘텐츠 관리 · ICT Lab{% endblock %}
+
+{% block content %}
+  <section class="admin-page">
+    <p class="eyebrow">Administrator</p>
+    <h1>콘텐츠 관리</h1>
+    <div class="admin-actions">
+      <a class="button-link" href="{{ url_for('web.admin_content_new') }}">새 콘텐츠 등록</a>
+      <form method="post" action="{{ url_for('web.admin_logout') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit">로그아웃</button>
+      </form>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <p class="form-message {{ category }}" role="status">{{ message }}</p>
+      {% endfor %}
+    {% endwith %}
+
+    {% if contents %}
+      <ul class="admin-content-list">
+        {% for content in contents %}
+          <li>
+            <div>
+              <strong>{{ content.title }}</strong>
+              <p>{{ content_type_labels[content.content_type] }} · {{ content.authored_at.strftime("%Y-%m-%d") }} · {{ "공개" if content.is_published else "비공개" }}</p>
+            </div>
+            <div class="row-actions">
+              <a href="{{ url_for('web.admin_content_edit', content_id=content.id) }}">수정</a>
+              <form method="post" action="{{ url_for('web.admin_content_delete', content_id=content.id) }}" onsubmit="return confirm('이 콘텐츠를 삭제하시겠습니까?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit">삭제</button>
+              </form>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>등록된 콘텐츠가 없습니다.</p>
+    {% endif %}
+  </section>
+{% endblock %}

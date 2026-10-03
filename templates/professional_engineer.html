@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Professional Engineer · ICT Lab{% endblock %}
+
+{% block content %}
+  <section class="content-page">
+    <p class="eyebrow">Professional Engineer</p>
+    <h1>정보통신기술사 문제 및 답안</h1>
+    {% if contents %}
+      <ul class="content-list">
+        {% for content in contents %}
+          <li>
+            <a href="{{ url_for('web.content_detail', content_id=content.id) }}">{{ content.title }}</a>
+            <time datetime="{{ content.authored_at.isoformat() }}">{{ content.authored_at.strftime("%Y-%m-%d") }}</time>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>아직 공개된 문제 및 답안이 없습니다.</p>
+    {% endif %}
+  </section>
+{% endblock %}

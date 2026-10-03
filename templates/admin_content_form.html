@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}{{ page_title }} · ICT Lab{% endblock %}
+
+{% block content %}
+  <section class="admin-page">
+    <p class="eyebrow">Administrator</p>
+    <h1>{{ page_title }}</h1>
+    <p><a href="{{ url_for('web.admin_contents') }}">콘텐츠 목록</a></p>
+    <form method="post" action="{{ url_for('web.admin_logout') }}" class="logout-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit">로그아웃</button>
+    </form>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <p class="form-message {{ category }}" role="status">{{ message }}</p>
+      {% endfor %}
+    {% endwith %}
+    {% if errors %}
+      <div class="form-errors" role="alert">
+        <ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+      </div>
+    {% endif %}
+
+    <form method="post" class="content-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label for="title">제목</label>
+      <input id="title" name="title" type="text" maxlength="500" required value="{{ form_values.title }}">
+
+      <label for="content_type">콘텐츠 유형</label>
+      <select id="content_type" name="content_type" required>
+        {% for value, label in content_type_labels.items() %}
+          <option value="{{ value }}"{% if form_values.content_type == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="body">본문</label>
+      <textarea id="body" name="body" rows="28" required>{{ form_values.body }}</textarea>
+
+      <label for="authored_at">작성일</label>
+      <input id="authored_at" name="authored_at" type="date" required value="{{ form_values.authored_at }}">
+
+      <label for="status">공개 상태</label>
+      <select id="status" name="status" required>
+        <option value="private"{% if form_values.status == "private" %} selected{% endif %}>비공개</option>
+        <option value="published"{% if form_values.status == "published" %} selected{% endif %}>공개</option>
+      </select>
+
+      <button type="submit">{{ submit_label }}</button>
+    </form>
+  </section>
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}{{ content.title }} · ICT Lab{% endblock %}
+
+{% block content %}
+  <article class="content-page content-detail">
+    <p class="eyebrow">{{ content_type_label }}</p>
+    <h1>{{ content.title }}</h1>
+    <p class="content-date"><time datetime="{{ content.authored_at.isoformat() }}">{{ content.authored_at.strftime("%Y-%m-%d") }}</time></p>
+    {% if session.get("is_admin") %}
+      <div class="row-actions detail-actions">
+        <a href="{{ url_for('web.admin_content_edit', content_id=content.id) }}">수정</a>
+        <form method="post" action="{{ url_for('web.admin_content_delete', content_id=content.id) }}" onsubmit="return confirm('이 콘텐츠를 삭제하시겠습니까?');">
+          <input type="hidden" name="csrf_token" value="{{ session.get('csrf_token', '') }}">
+          <button type="submit">삭제</button>
+        </form>
+      </div>
+    {% endif %}
+    <div class="content-body">{{ content.body }}</div>
+  </article>
+{% endblock %}
