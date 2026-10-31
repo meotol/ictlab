@@ -250,6 +250,41 @@ class HtmlImportRouteTests(unittest.TestCase):
         self.assertIn(b"image-1.png", refreshed.data)
         self.assertIn(b"image-2.png", refreshed.data)
 
+    def test_rich_post_preserves_twenty_two_answer_lines_after_reload(self):
+        answer_lines = [f"{index:02d} 기술사 답안 항목" for index in range(1, 23)]
+        rich_body = (
+            "<h2>기술사 모범답안</h2><p>"
+            + "\n".join(answer_lines)
+            + "</p><table><tr><th>구분</th><td>내용</td></tr></table>"
+            + "<math><msqrt><mi>x</mi></msqrt></math>"
+        )
+        response = self.client.post(
+            "/admin/content/new",
+            data={
+                "csrf_token": "test-csrf",
+                "title": "22줄 답안",
+                "content_type": CONTENT_TYPE_PE_QA,
+                "body_format": "rich_html",
+                "body": rich_body,
+                "authored_at": "2026-10-31",
+                "status": "published",
+            },
+        )
+        self.assertEqual(302, response.status_code)
+        with self.app.app_context():
+            content = get_db_session().scalar(select(Content))
+            unpacked = unpack_sanitized_html(content.body, self.app.config["SECRET_KEY"])
+            self.assertEqual(21, unpacked.count("\n"))
+            for line in answer_lines:
+                self.assertIn(line, unpacked)
+            content_id = content.id
+        detail = self.client.get(f"/contents/{content_id}")
+        self.assertIn("\n".join(answer_lines).encode(), detail.data)
+        for line in answer_lines:
+            self.assertIn(line.encode(), detail.data)
+        self.assertIn(b"<table>", detail.data)
+        self.assertIn(b"<msqrt>", detail.data)
+
     def test_html_edit_rejects_invalid_signature_without_changing_data(self):
         forged = f'{HTML_BODY_PREFIX}{"0" * 64} --><p>forged</p>'
         with self.app.app_context():
@@ -289,7 +324,7 @@ class HtmlImportRouteTests(unittest.TestCase):
         self.assertIn(b'contenteditable="true"', response.data)
         self.assertIn(b'tabindex="0"', response.data)
         self.assertIn(b'inputmode="text"', response.data)
-        self.assertIn(b'content_editor.js?v=20261031-2', response.data)
+        self.assertIn(b'content_editor.js?v=20261031-3', response.data)
         self.assertIn(b'id="editor_image"', response.data)
         self.assertIn(b'id="html_file"', response.data)
         script_path = Path(__file__).parents[1] / "static" / "js" / "content_editor.js"
@@ -299,6 +334,8 @@ class HtmlImportRouteTests(unittest.TestCase):
         self.assertIn("editor.innerHTML", script)
         self.assertIn("looksLikeMarkdown", script)
         self.assertIn("markdownToHtml", script)
+        self.assertIn("plainTextToHtml", script)
+        self.assertIn('lines.join("<br>")', script)
         self.assertIn("recoverReferencedImages", script)
         self.assertIn('credentials: "omit"', script)
         self.assertIn("markMissingImage", script)
@@ -312,6 +349,7 @@ class HtmlImportRouteTests(unittest.TestCase):
         self.assertIn('[hidden] { display: none !important; }', css)
         self.assertIn('-webkit-user-select: text', css)
         self.assertIn('touch-action: manipulation', css)
+        self.assertIn('.content-body.imported-html { white-space: pre-wrap; }', css)
 
     def test_forged_html_marker_is_rejected_and_never_rendered(self):
         forged = f'{HTML_BODY_PREFIX}{"0" * 64} --><script>alert("forged")</script>'

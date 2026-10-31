@@ -129,6 +129,13 @@
     return output.join("");
   }
 
+  function plainTextToHtml(value) {
+    return value.replace(/\r\n?/g, "\n").split(/\n{2,}/).map((paragraph) => {
+      const lines = paragraph.split("\n").map((line) => escapeHtml(line));
+      return `<p>${lines.join("<br>")}</p>`;
+    }).join("");
+  }
+
   function blobToDataUrl(blob) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -222,13 +229,14 @@
       .map((item) => item.getAsFile())
       .filter(Boolean);
     const markdown = !html && looksLikeMarkdown(text);
-    if (!html && !markdown && !imageFiles.length) return;
+    if (!html && !text && !imageFiles.length) return;
 
     event.preventDefault();
     pendingPaste = (async () => {
       status.textContent = "붙여넣은 서식과 이미지를 처리하고 있습니다…";
       if (html) insertHtmlAtSelection(html);
       else if (markdown) insertHtmlAtSelection(markdownToHtml(text));
+      else if (text) insertHtmlAtSelection(plainTextToHtml(text));
       const unresolved = Array.from(editor.querySelectorAll("img"))
         .filter((image) => !(image.getAttribute("src") || "").startsWith("data:"));
       const inserted = await insertImageFiles(imageFiles, unresolved);
