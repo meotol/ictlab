@@ -1,7 +1,9 @@
 from datetime import date
+from pathlib import Path
 import secrets
 
-from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, send_from_directory, session, url_for
+from markupsafe import Markup
 from sqlalchemy import or_, select
 from werkzeug.security import check_password_hash
 
@@ -15,6 +17,14 @@ from ictlab.models import (
     NewsArticle,
 )
 from ictlab.web.auth import admin_login_required, csrf_token, safe_next_url, validate_csrf
+from ictlab.html_import import (
+    HTML_BODY_PREFIX,
+    IMAGE_PLACEHOLDER_PREFIX,
+    HtmlImportError,
+    pack_sanitized_html,
+    sanitize_html_document,
+    unpack_sanitized_html,
+)
 
 
 web = Blueprint("web", __name__)
@@ -119,11 +129,25 @@ def content_detail(content_id: int):
     )
     if content is None:
         abort(404)
+    imported_body = unpack_sanitized_html(content.body, current_app.config["SECRET_KEY"])
+    is_imported_html = imported_body is not None
+    rendered_body = Markup(imported_body) if is_imported_html else content.body
     return render_template(
         "content_detail.html",
         content=content,
         content_type_label=CONTENT_TYPE_LABELS[content.content_type],
+        is_imported_html=is_imported_html,
+        rendered_body=rendered_body,
     )
+
+
+@web.get("/contents/<int:content_id>/images/<path:filename>")
+def content_image(content_id: int, filename: str):
+    content = get_db_session().get(Content, content_id)
+    if content is None or (not content.is_published and not session.get("is_admin")):
+        abort(404)
+    directory = Path(current_app.config["CONTENT_UPLOAD_ROOT"]) / str(content_id)
+    return send_from_directory(directory, filename, max_age=31536000)
 
 
 @web.route("/admin/login", methods=["GET", "POST"])
@@ -189,6 +213,24 @@ def admin_content_new():
     errors, authored_at = _validate_content_form(form_values)
     if request.method == "POST":
         validate_csrf()
+        imported_document = None
+        uploaded_html = request.files.get("html_file")
+        if uploaded_html and uploaded_html.filename:
+            if not uploaded_html.filename.lower().endswith((".html", ".htm")):
+                errors.append(".html 또는 .htm 파일만 가져올 수 있습니다.")
+            else:
+                try:
+                    imported_document = sanitize_html_document(
+                        uploaded_html.stream.read(current_app.config["MAX_HTML_IMPORT_BYTES"] + 1),
+                        max_bytes=current_app.config["MAX_HTML_IMPORT_BYTES"],
+                        max_image_bytes=current_app.config["MAX_HTML_IMAGE_BYTES"],
+                        max_images=current_app.config["MAX_HTML_IMAGES"],
+                    )
+                except HtmlImportError as exc:
+                    errors.append(str(exc))
+                else:
+                    form_values["body"] = imported_document.html
+                    errors = [error for error in errors if error != "본문을 입력해주세요."]
         if not errors:
             session = get_db_session()
             content = Content(
@@ -199,7 +241,29 @@ def admin_content_new():
                 is_published=form_values["status"] == "published",
             )
             session.add(content)
-            session.commit()
+            image_directory = None
+            try:
+                session.flush()
+                if imported_document:
+                    image_directory = Path(current_app.config["CONTENT_UPLOAD_ROOT"]) / str(content.id)
+                    image_directory.mkdir(parents=True, exist_ok=False)
+                    image_directory.chmod(0o700)
+                    body = imported_document.html
+                    for index, image in enumerate(imported_document.images):
+                        destination = image_directory / image.filename
+                        destination.write_bytes(image.data)
+                        destination.chmod(0o600)
+                        image_url = url_for("web.content_image", content_id=content.id, filename=image.filename)
+                        body = body.replace(f"{IMAGE_PLACEHOLDER_PREFIX}{index}__", image_url)
+                    content.body = pack_sanitized_html(body, current_app.config["SECRET_KEY"])
+                session.commit()
+            except Exception:
+                session.rollback()
+                if image_directory and image_directory.exists():
+                    for path in image_directory.iterdir():
+                        path.unlink()
+                    image_directory.rmdir()
+                raise
             flash("콘텐츠가 저장되었습니다.", "success")
             return redirect(url_for("web.admin_contents"))
 
@@ -261,22 +325,31 @@ def admin_content_delete(content_id: int):
     return redirect(url_for("web.admin_contents"))
 
 
-def _content_form_values(content: Content | None = None) -> dict[str, str]:
+def _content_form_values(content: Content | None = None) -> dict[str, str | bool]:
+    imported_body = (
+        unpack_sanitized_html(content.body, current_app.config["SECRET_KEY"])
+        if content else None
+    )
+    is_imported_html = imported_body is not None
     if request.method == "POST":
         return {
             "title": request.form.get("title", "").strip(),
             "content_type": request.form.get("content_type", ""),
-            "body": request.form.get("body", "").strip(),
+            # Imported HTML remains immutable here. Allowing raw edits while retaining
+            # the trusted marker would turn this form into a stored-XSS bypass.
+            "body": content.body if is_imported_html else request.form.get("body", "").strip(),
             "authored_at": request.form.get("authored_at", ""),
             "status": request.form.get("status", ""),
+            "is_imported_html": is_imported_html,
         }
     if content is not None:
         return {
             "title": content.title,
             "content_type": content.content_type,
-            "body": content.body,
+            "body": imported_body if is_imported_html else content.body,
             "authored_at": content.authored_at.isoformat(),
             "status": "published" if content.is_published else "private",
+            "is_imported_html": is_imported_html,
         }
     return {
         "title": "",
@@ -284,10 +357,11 @@ def _content_form_values(content: Content | None = None) -> dict[str, str]:
         "body": "",
         "authored_at": date.today().isoformat(),
         "status": "private",
+        "is_imported_html": False,
     }
 
 
-def _validate_content_form(form_values: dict[str, str]) -> tuple[list[str], date]:
+def _validate_content_form(form_values: dict[str, str | bool]) -> tuple[list[str], date]:
     errors = []
     if request.method != "POST":
         return errors, date.today()
@@ -297,6 +371,12 @@ def _validate_content_form(form_values: dict[str, str]) -> tuple[list[str], date
         errors.append("올바른 콘텐츠 유형을 선택해주세요.")
     if not form_values["body"]:
         errors.append("본문을 입력해주세요.")
+    if (
+        isinstance(form_values["body"], str)
+        and form_values["body"].startswith(HTML_BODY_PREFIX)
+        and not form_values.get("is_imported_html")
+    ):
+        errors.append("예약된 HTML 형식 표식은 일반 본문에 사용할 수 없습니다.")
     try:
         authored_at = date.fromisoformat(form_values["authored_at"])
     except ValueError:

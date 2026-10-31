@@ -110,6 +110,15 @@ nav a:hover, nav a:focus { color: #0d4fa3; }
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+.content-body.imported-html { white-space: normal; }
+.imported-html table { display: block; width: 100%; margin: 1.5rem 0; overflow-x: auto; border-collapse: collapse; }
+.imported-html th, .imported-html td { padding: 0.65rem; border: 1px solid #ccd5e0; text-align: left; vertical-align: top; }
+.imported-html th { background: #f2f5f8; }
+.imported-html img { display: block; max-width: 100%; height: auto; margin: 1.5rem auto; }
+.imported-html figure { margin: 1.5rem 0; }
+.imported-html figcaption { color: #526074; font-size: 0.9rem; text-align: center; }
+.imported-html math { max-width: 100%; overflow-x: auto; }
+.form-help { margin: 0; color: #526074; font-size: 0.9rem; }
 .content-form { display: grid; gap: 0.75rem; margin-top: 2rem; }
 .content-form label { margin-top: 0.75rem; font-weight: 700; }
 .content-form input, .content-form select, .content-form textarea {

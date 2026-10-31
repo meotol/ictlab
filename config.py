@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -18,6 +19,13 @@ class Config:
     ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
     ADMIN_PASSWORD_HASH = os.getenv("ADMIN_PASSWORD_HASH")
     DATABASE_ENGINE_OPTIONS = {}
+    CONTENT_UPLOAD_ROOT = os.getenv(
+        "CONTENT_UPLOAD_ROOT",
+        str(Path(__file__).resolve().parent / "instance" / "content_uploads"),
+    )
+    MAX_HTML_IMPORT_BYTES = 2 * 1024 * 1024
+    MAX_HTML_IMAGE_BYTES = 5 * 1024 * 1024
+    MAX_HTML_IMAGES = 20
 
 
 def validate_config(config) -> None:

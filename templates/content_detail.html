@@ -16,6 +16,6 @@
         </form>
       </div>
     {% endif %}
-    <div class="content-body">{{ content.body }}</div>
+    <div class="content-body{% if is_imported_html %} imported-html{% endif %}">{{ rendered_body }}</div>
   </article>
 {% endblock %}

@@ -9,3 +9,4 @@ ictlab_db_backup.sql
 
 .env.save
 *.backup-*
+/instance/

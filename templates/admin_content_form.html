@@ -23,7 +23,7 @@
       </div>
     {% endif %}
 
-    <form method="post" class="content-form">
+    <form method="post" enctype="multipart/form-data" class="content-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <label for="title">제목</label>
       <input id="title" name="title" type="text" maxlength="500" required value="{{ form_values.title }}">
@@ -36,7 +36,16 @@
       </select>
 
       <label for="body">본문</label>
-      <textarea id="body" name="body" rows="28" required>{{ form_values.body }}</textarea>
+      <textarea id="body" name="body" rows="28"{% if form_values.is_imported_html %} readonly{% endif %}>{{ form_values.body }}</textarea>
+      {% if form_values.is_imported_html %}
+        <p class="form-help">안전하게 가져온 HTML 본문은 이 화면에서 직접 수정할 수 없습니다.</p>
+      {% endif %}
+
+      {% if page_title == "콘텐츠 등록" %}
+        <label for="html_file">HTML 파일 가져오기 (선택)</label>
+        <input id="html_file" name="html_file" type="file" accept=".html,.htm,text/html">
+        <p class="form-help">UTF-8 HTML의 문단, 표, 목록, MathML 및 data: 이미지를 안전하게 가져옵니다. 파일을 선택하면 위 본문 대신 사용됩니다.</p>
+      {% endif %}
 
       <label for="authored_at">작성일</label>
       <input id="authored_at" name="authored_at" type="date" required value="{{ form_values.authored_at }}">
