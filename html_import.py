@@ -35,6 +35,7 @@ GLOBAL_ATTRIBUTES = {"aria-label", "dir", "lang", "title"}
 TAG_ATTRIBUTES = {
     "a": {"href"},
     "col": {"span"},
+    "figure": {"class"},
     "img": {"alt", "height", "width"},
     "ol": {"reversed", "start", "type"},
     "td": {"colspan", "headers", "rowspan"},
@@ -176,6 +177,8 @@ class _Sanitizer(HTMLParser):
             if name not in allowed or len(value) > MAX_ATTRIBUTE_LENGTH:
                 continue
             if name == "href" and not _safe_link(value):
+                continue
+            if name == "class" and not (tag == "figure" and value == "missing-image"):
                 continue
             result.append((name, value))
         if tag == "a" and any(name == "href" for name, _ in result):

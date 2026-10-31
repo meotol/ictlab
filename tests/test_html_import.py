@@ -39,6 +39,18 @@ class HtmlSanitizerTests(unittest.TestCase):
         )
         self.assertEqual("<p>안전</p><a>링크</a>", result.html)
 
+    def test_preserves_image_geometry_and_missing_image_notice(self):
+        encoded = base64.b64encode(PNG_DATA).decode()
+        result = self.sanitize(
+            f'<img src="data:image/png;base64,{encoded}" width="640" height="360" style="width:999px">'
+            '<figure class="missing-image evil"><div>잘못된 표시</div></figure>'
+            '<figure class="missing-image"><div>이미지 누락: 복구 불가</div></figure>'
+        )
+        self.assertIn('width="640" height="360"', result.html)
+        self.assertNotIn("style=", result.html)
+        self.assertNotIn('class="missing-image evil"', result.html)
+        self.assertIn('<figure class="missing-image">', result.html)
+
     def test_rejects_non_utf8_and_mismatched_image_signature(self):
         with self.assertRaises(HtmlImportError):
             sanitize_html_document(
@@ -198,6 +210,13 @@ class HtmlImportRouteTests(unittest.TestCase):
         self.assertIn('addEventListener("paste"', script)
         self.assertIn("readAsDataURL", script)
         self.assertIn("editor.innerHTML", script)
+        self.assertIn("looksLikeMarkdown", script)
+        self.assertIn("markdownToHtml", script)
+        self.assertIn("recoverReferencedImages", script)
+        self.assertIn('credentials: "omit"', script)
+        self.assertIn("markMissingImage", script)
+        self.assertIn("await pendingPaste", script)
+        self.assertIn("fillTitleFromPastedContent", script)
 
     def test_forged_html_marker_is_rejected_and_never_rendered(self):
         forged = f'{HTML_BODY_PREFIX}{"0" * 64} --><script>alert("forged")</script>'

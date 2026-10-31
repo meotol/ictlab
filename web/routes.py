@@ -371,7 +371,7 @@ def _content_form_values(content: Content | None = None) -> dict[str, str | bool
         "body": "",
         "authored_at": date.today().isoformat(),
         "status": "private",
-        "body_format": "plain_text",
+        "body_format": "rich_html",
         "is_imported_html": False,
     }
 
