@@ -152,6 +152,53 @@ class HtmlImportRouteTests(unittest.TestCase):
         )
         self.assertEqual(404, traversal.status_code)
 
+    def test_rich_paste_persists_format_mathml_and_clipboard_image(self):
+        encoded = base64.b64encode(PNG_DATA).decode()
+        rich_body = (
+            '<h2>정기 브리핑</h2><p><strong>핵심</strong> 내용</p>'
+            '<table><tr><th>구분</th><th>설명</th></tr><tr><td>A</td><td>B</td></tr></table>'
+            '<ol><li>첫째</li><li>둘째</li></ol>'
+            '<math><mfrac><mi>a</mi><mi>b</mi></mfrac></math>'
+            f'<img src="data:image/png;base64,{encoded}" alt="클립보드 그림">'
+        )
+        response = self.client.post(
+            "/admin/content/new",
+            data={
+                "csrf_token": "test-csrf",
+                "title": "서식 붙여넣기",
+                "content_type": CONTENT_TYPE_PE_QA,
+                "body_format": "rich_html",
+                "body": rich_body,
+                "authored_at": "2026-10-31",
+                "status": "published",
+            },
+        )
+        self.assertEqual(302, response.status_code)
+        with self.app.app_context():
+            content = get_db_session().scalar(select(Content))
+            imported = unpack_sanitized_html(content.body, self.app.config["SECRET_KEY"])
+            self.assertIn("<table>", imported)
+            self.assertIn("<mfrac><mi>a</mi><mi>b</mi></mfrac>", imported)
+            self.assertIn(f"/contents/{content.id}/images/image-1.png", imported)
+            content_id = content.id
+        detail = self.client.get(f"/contents/{content_id}")
+        self.assertIn(b"<strong>", detail.data)
+        self.assertIn(b"<table>", detail.data)
+        self.assertIn(b"<math>", detail.data)
+
+    def test_admin_form_exposes_rich_paste_and_individual_image_controls(self):
+        response = self.client.get("/admin/content/new")
+        self.assertEqual(200, response.status_code)
+        self.assertIn(b'value="rich_html"', response.data)
+        self.assertIn(b'contenteditable="true"', response.data)
+        self.assertIn(b'id="editor_image"', response.data)
+        self.assertIn(b'id="html_file"', response.data)
+        script_path = Path(__file__).parents[1] / "static" / "js" / "content_editor.js"
+        script = script_path.read_text(encoding="utf-8")
+        self.assertIn('addEventListener("paste"', script)
+        self.assertIn("readAsDataURL", script)
+        self.assertIn("editor.innerHTML", script)
+
     def test_forged_html_marker_is_rejected_and_never_rendered(self):
         forged = f'{HTML_BODY_PREFIX}{"0" * 64} --><script>alert("forged")</script>'
         response = self.client.post(

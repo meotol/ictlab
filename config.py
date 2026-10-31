@@ -23,7 +23,7 @@ class Config:
         "CONTENT_UPLOAD_ROOT",
         str(Path(__file__).resolve().parent / "instance" / "content_uploads"),
     )
-    MAX_HTML_IMPORT_BYTES = 2 * 1024 * 1024
+    MAX_HTML_IMPORT_BYTES = 12 * 1024 * 1024
     MAX_HTML_IMAGE_BYTES = 5 * 1024 * 1024
     MAX_HTML_IMAGES = 20
 

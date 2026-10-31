@@ -35,8 +35,36 @@
         {% endfor %}
       </select>
 
+      <label for="body_format">본문 입력 방식</label>
+      <select id="body_format" name="body_format"{% if form_values.is_imported_html %} disabled{% endif %}>
+        <option value="plain_text"{% if form_values.body_format == "plain_text" %} selected{% endif %}>일반 텍스트</option>
+        <option value="rich_html"{% if form_values.body_format == "rich_html" %} selected{% endif %}>서식 있는 붙여넣기</option>
+      </select>
+      {% if form_values.is_imported_html %}
+        <input type="hidden" name="body_format" value="rich_html">
+      {% endif %}
+
       <label for="body">본문</label>
       <textarea id="body" name="body" rows="28"{% if form_values.is_imported_html %} readonly{% endif %}>{{ form_values.body }}</textarea>
+      <section id="rich_editor_panel" class="rich-editor-panel" hidden>
+        <div class="rich-editor-toolbar" aria-label="본문 서식 도구">
+          <button type="button" data-editor-command="bold"><strong>굵게</strong></button>
+          <button type="button" data-editor-command="insertUnorderedList">목록</button>
+          <button type="button" data-editor-command="insertOrderedList">번호 목록</button>
+          <label class="button-link" for="editor_image">이미지 삽입</label>
+          <input id="editor_image" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
+        </div>
+        <div
+          id="rich_editor"
+          class="rich-editor"
+          contenteditable="{% if form_values.is_imported_html %}false{% else %}true{% endif %}"
+          role="textbox"
+          aria-multiline="true"
+          aria-label="서식 있는 본문"
+          data-trusted-html="{{ 'true' if form_values.is_imported_html else 'false' }}"
+        ></div>
+        <p id="editor_status" class="form-help" role="status">ChatGPT의 답안을 이 영역에 붙여넣으면 표, 목록, MathML과 클립보드 이미지를 함께 저장합니다.</p>
+      </section>
       {% if form_values.is_imported_html %}
         <p class="form-help">안전하게 가져온 HTML 본문은 이 화면에서 직접 수정할 수 없습니다.</p>
       {% endif %}
@@ -59,4 +87,6 @@
       <button type="submit">{{ submit_label }}</button>
     </form>
   </section>
+  <script id="initial_body" type="application/json">{{ form_values.body | tojson }}</script>
+  <script src="{{ url_for('static', filename='js/content_editor.js', v='20261031-1') }}"></script>
 {% endblock %}

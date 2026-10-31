@@ -231,6 +231,18 @@ def admin_content_new():
                 else:
                     form_values["body"] = imported_document.html
                     errors = [error for error in errors if error != "본문을 입력해주세요."]
+        elif form_values["body_format"] == "rich_html" and form_values["body"]:
+            try:
+                imported_document = sanitize_html_document(
+                    str(form_values["body"]).encode("utf-8"),
+                    max_bytes=current_app.config["MAX_HTML_IMPORT_BYTES"],
+                    max_image_bytes=current_app.config["MAX_HTML_IMAGE_BYTES"],
+                    max_images=current_app.config["MAX_HTML_IMAGES"],
+                )
+            except HtmlImportError as exc:
+                errors.append(str(exc))
+            else:
+                form_values["body"] = imported_document.html
         if not errors:
             session = get_db_session()
             content = Content(
@@ -340,6 +352,7 @@ def _content_form_values(content: Content | None = None) -> dict[str, str | bool
             "body": content.body if is_imported_html else request.form.get("body", "").strip(),
             "authored_at": request.form.get("authored_at", ""),
             "status": request.form.get("status", ""),
+            "body_format": "rich_html" if is_imported_html else request.form.get("body_format", "plain_text"),
             "is_imported_html": is_imported_html,
         }
     if content is not None:
@@ -349,6 +362,7 @@ def _content_form_values(content: Content | None = None) -> dict[str, str | bool
             "body": imported_body if is_imported_html else content.body,
             "authored_at": content.authored_at.isoformat(),
             "status": "published" if content.is_published else "private",
+            "body_format": "rich_html" if is_imported_html else "plain_text",
             "is_imported_html": is_imported_html,
         }
     return {
@@ -357,6 +371,7 @@ def _content_form_values(content: Content | None = None) -> dict[str, str | bool
         "body": "",
         "authored_at": date.today().isoformat(),
         "status": "private",
+        "body_format": "plain_text",
         "is_imported_html": False,
     }
 
@@ -369,6 +384,8 @@ def _validate_content_form(form_values: dict[str, str | bool]) -> tuple[list[str
         errors.append("제목을 입력해주세요.")
     if form_values["content_type"] not in CONTENT_TYPE_LABELS:
         errors.append("올바른 콘텐츠 유형을 선택해주세요.")
+    if form_values["body_format"] not in {"plain_text", "rich_html"}:
+        errors.append("올바른 본문 형식을 선택해주세요.")
     if not form_values["body"]:
         errors.append("본문을 입력해주세요.")
     if (
