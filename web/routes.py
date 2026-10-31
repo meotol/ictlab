@@ -1,5 +1,6 @@
 from datetime import date
 from pathlib import Path
+import re
 import secrets
 
 from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, send_from_directory, session, url_for
@@ -298,17 +299,68 @@ def admin_content_edit(content_id: int):
     if content is None:
         abort(404)
 
+    imported_body = unpack_sanitized_html(content.body, current_app.config["SECRET_KEY"])
+    if content.body.startswith(HTML_BODY_PREFIX) and imported_body is None:
+        if request.method == "POST":
+            validate_csrf()
+        abort(409, description="HTML 본문의 서명을 확인할 수 없어 안전하게 수정을 중단했습니다.")
+
     form_values = _content_form_values(content)
     errors, authored_at = _validate_content_form(form_values)
     if request.method == "POST":
         validate_csrf()
+        imported_document = None
+        if imported_body is not None and form_values["body"]:
+            image_directory = Path(current_app.config["CONTENT_UPLOAD_ROOT"]) / str(content.id)
+            allowed_sources = frozenset(
+                url_for("web.content_image", content_id=content.id, filename=path.name)
+                for path in image_directory.iterdir()
+                if path.is_file()
+            ) if image_directory.is_dir() else frozenset()
+            existing_numbers = [
+                int(match.group(1))
+                for path in image_directory.iterdir()
+                if path.is_file() and (match := re.fullmatch(r"image-(\d+)\.(?:png|jpg|gif|webp)", path.name))
+            ] if image_directory.is_dir() else []
+            try:
+                imported_document = sanitize_html_document(
+                    str(form_values["body"]).encode("utf-8"),
+                    max_bytes=current_app.config["MAX_HTML_IMPORT_BYTES"],
+                    max_image_bytes=current_app.config["MAX_HTML_IMAGE_BYTES"],
+                    max_images=current_app.config["MAX_HTML_IMAGES"],
+                    allowed_image_sources=allowed_sources,
+                    image_filename_start=max(existing_numbers, default=0) + 1,
+                )
+            except HtmlImportError as exc:
+                errors.append(str(exc))
         if not errors:
             content.title = form_values["title"]
             content.content_type = form_values["content_type"]
-            content.body = form_values["body"]
             content.authored_at = authored_at
             content.is_published = form_values["status"] == "published"
-            session.commit()
+            new_images = []
+            try:
+                if imported_document:
+                    image_directory.mkdir(parents=True, exist_ok=True)
+                    image_directory.chmod(0o700)
+                    body = imported_document.html
+                    for index, image in enumerate(imported_document.images):
+                        destination = image_directory / image.filename
+                        with destination.open("xb") as output:
+                            output.write(image.data)
+                        destination.chmod(0o600)
+                        new_images.append(destination)
+                        image_url = url_for("web.content_image", content_id=content.id, filename=image.filename)
+                        body = body.replace(f"{IMAGE_PLACEHOLDER_PREFIX}{index}__", image_url)
+                    content.body = pack_sanitized_html(body, current_app.config["SECRET_KEY"])
+                else:
+                    content.body = form_values["body"]
+                session.commit()
+            except Exception:
+                session.rollback()
+                for path in new_images:
+                    path.unlink(missing_ok=True)
+                raise
             flash("콘텐츠를 수정했습니다.", "success")
             return redirect(url_for("web.admin_contents"))
 
@@ -347,9 +399,7 @@ def _content_form_values(content: Content | None = None) -> dict[str, str | bool
         return {
             "title": request.form.get("title", "").strip(),
             "content_type": request.form.get("content_type", ""),
-            # Imported HTML remains immutable here. Allowing raw edits while retaining
-            # the trusted marker would turn this form into a stored-XSS bypass.
-            "body": content.body if is_imported_html else request.form.get("body", "").strip(),
+            "body": request.form.get("body", "").strip(),
             "authored_at": request.form.get("authored_at", ""),
             "status": request.form.get("status", ""),
             "body_format": "rich_html" if is_imported_html else request.form.get("body_format", "plain_text"),

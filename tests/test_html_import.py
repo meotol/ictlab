@@ -151,7 +151,7 @@ class HtmlImportRouteTests(unittest.TestCase):
                 "status": "published",
             },
         )
-        self.assertEqual(302, edit.status_code)
+        self.assertEqual(200, edit.status_code)
         with self.app.app_context():
             content = get_db_session().get(Content, content_id)
             self.assertIsNotNone(
@@ -197,6 +197,90 @@ class HtmlImportRouteTests(unittest.TestCase):
         self.assertIn(b"<strong>", detail.data)
         self.assertIn(b"<table>", detail.data)
         self.assertIn(b"<math>", detail.data)
+
+        edit_form = self.client.get(f"/admin/contents/{content_id}/edit")
+        self.assertEqual(200, edit_form.status_code)
+        self.assertIn(b'contenteditable="true"', edit_form.data)
+        self.assertIn(b'tabindex="0"', edit_form.data)
+        self.assertIn(b"data-trusted-html=\"true\"", edit_form.data)
+        self.assertIn(b"\\u003cmfrac", edit_form.data)
+
+        original_image = (
+            Path(self.app.config["CONTENT_UPLOAD_ROOT"])
+            / str(content_id)
+            / "image-1.png"
+        )
+        original_image_bytes = original_image.read_bytes()
+        updated_body = (
+            '<h2>수정된 브리핑</h2><table><tr><td>수정</td></tr></table>'
+            '<math><msup><mi>x</mi><mn>3</mn></msup></math>'
+            f'<img src="/contents/{content_id}/images/image-1.png" width="640" height="360">'
+            '<script>alert("removed")</script>'
+            f'<img src="data:image/png;base64,{encoded}" alt="추가 그림">'
+        )
+        update = self.client.post(
+            f"/admin/contents/{content_id}/edit",
+            data={
+                "csrf_token": "test-csrf",
+                "title": "수정된 서식 붙여넣기",
+                "content_type": CONTENT_TYPE_PE_QA,
+                "body_format": "rich_html",
+                "body": updated_body,
+                "authored_at": "2026-10-31",
+                "status": "published",
+            },
+        )
+        self.assertEqual(302, update.status_code)
+        self.assertEqual(original_image_bytes, original_image.read_bytes())
+        self.assertEqual(
+            PNG_DATA,
+            (original_image.parent / "image-2.png").read_bytes(),
+        )
+        with self.app.app_context():
+            updated = get_db_session().get(Content, content_id)
+            unpacked = unpack_sanitized_html(updated.body, self.app.config["SECRET_KEY"])
+            self.assertIn("수정된 브리핑", unpacked)
+            self.assertIn("<msup><mi>x</mi><mn>3</mn></msup>", unpacked)
+            self.assertIn('width="640" height="360"', unpacked)
+            self.assertIn(f"/contents/{content_id}/images/image-1.png", unpacked)
+            self.assertIn(f"/contents/{content_id}/images/image-2.png", unpacked)
+            self.assertNotIn("script", unpacked)
+        refreshed = self.client.get(f"/contents/{content_id}")
+        self.assertIn("수정된 브리핑".encode(), refreshed.data)
+        self.assertIn(b"image-1.png", refreshed.data)
+        self.assertIn(b"image-2.png", refreshed.data)
+
+    def test_html_edit_rejects_invalid_signature_without_changing_data(self):
+        forged = f'{HTML_BODY_PREFIX}{"0" * 64} --><p>forged</p>'
+        with self.app.app_context():
+            content = Content(
+                title="서명 오류",
+                content_type=CONTENT_TYPE_PE_QA,
+                body=forged,
+                authored_at=__import__("datetime").date(2026, 10, 31),
+                is_published=True,
+            )
+            get_db_session().add(content)
+            get_db_session().commit()
+            content_id = content.id
+        self.assertEqual(409, self.client.get(f"/admin/contents/{content_id}/edit").status_code)
+        post = self.client.post(
+            f"/admin/contents/{content_id}/edit",
+            data={
+                "csrf_token": "test-csrf",
+                "title": "덮어쓰기 시도",
+                "content_type": CONTENT_TYPE_PE_QA,
+                "body_format": "rich_html",
+                "body": "<p>replacement</p>",
+                "authored_at": "2026-10-31",
+                "status": "published",
+            },
+        )
+        self.assertEqual(409, post.status_code)
+        with self.app.app_context():
+            unchanged = get_db_session().get(Content, content_id)
+            self.assertEqual("서명 오류", unchanged.title)
+            self.assertEqual(forged, unchanged.body)
 
     def test_admin_form_exposes_rich_paste_and_individual_image_controls(self):
         response = self.client.get("/admin/content/new")

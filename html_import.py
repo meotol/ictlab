@@ -101,12 +101,20 @@ def unpack_sanitized_html(value: str, secret_key: str) -> str | None:
 
 
 class _Sanitizer(HTMLParser):
-    def __init__(self, max_image_bytes: int, max_images: int):
+    def __init__(
+        self,
+        max_image_bytes: int,
+        max_images: int,
+        allowed_image_sources: frozenset[str],
+        image_filename_start: int,
+    ):
         super().__init__(convert_charrefs=True)
         self.output: list[str] = []
         self.images: list[ImportedImage] = []
         self.max_image_bytes = max_image_bytes
         self.max_images = max_images
+        self.allowed_image_sources = allowed_image_sources
+        self.image_filename_start = image_filename_start
         self.drop_depth = 0
         self.open_tags: list[str] = []
 
@@ -186,9 +194,12 @@ class _Sanitizer(HTMLParser):
         return result
 
     def _import_image(self, source: str) -> str:
+        source = source.strip()
+        if source in self.allowed_image_sources:
+            return source
         if len(self.images) >= self.max_images:
             raise HtmlImportError(f"이미지는 최대 {self.max_images}개까지 가져올 수 있습니다.")
-        match = DATA_IMAGE_RE.fullmatch(source.strip())
+        match = DATA_IMAGE_RE.fullmatch(source)
         if not match:
             raise HtmlImportError("그림은 PNG, JPEG, GIF, WebP data: 이미지만 허용됩니다.")
         mime_type = match.group(1).lower()
@@ -204,12 +215,20 @@ class _Sanitizer(HTMLParser):
             valid_signature = valid_signature and len(payload) >= 12 and payload[8:12] == b"WEBP"
         if not valid_signature:
             raise HtmlImportError("이미지 형식과 실제 파일 내용이 일치하지 않습니다.")
-        filename = f"image-{len(self.images) + 1}.{extension}"
+        filename = f"image-{self.image_filename_start + len(self.images)}.{extension}"
         self.images.append(ImportedImage(filename, payload))
         return f"{IMAGE_PLACEHOLDER_PREFIX}{len(self.images) - 1}__"
 
 
-def sanitize_html_document(payload: bytes, *, max_bytes: int, max_image_bytes: int, max_images: int) -> SanitizedDocument:
+def sanitize_html_document(
+    payload: bytes,
+    *,
+    max_bytes: int,
+    max_image_bytes: int,
+    max_images: int,
+    allowed_image_sources: frozenset[str] = frozenset(),
+    image_filename_start: int = 1,
+) -> SanitizedDocument:
     if not payload:
         raise HtmlImportError("HTML 파일이 비어 있습니다.")
     if len(payload) > max_bytes:
@@ -218,7 +237,12 @@ def sanitize_html_document(payload: bytes, *, max_bytes: int, max_image_bytes: i
         source = payload.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
         raise HtmlImportError("HTML 파일은 UTF-8 인코딩이어야 합니다.") from exc
-    parser = _Sanitizer(max_image_bytes, max_images)
+    parser = _Sanitizer(
+        max_image_bytes,
+        max_images,
+        allowed_image_sources,
+        image_filename_start,
+    )
     try:
         parser.feed(source)
         parser.close_document()

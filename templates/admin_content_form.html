@@ -45,7 +45,7 @@
       {% endif %}
 
       <label for="body">본문 / 붙여넣기 미리보기</label>
-      <textarea id="body" name="body" rows="28"{% if form_values.is_imported_html %} readonly{% endif %}>{{ form_values.body }}</textarea>
+      <textarea id="body" name="body" rows="28">{{ form_values.body }}</textarea>
       <section id="rich_editor_panel" class="rich-editor-panel" hidden>
         <div class="rich-editor-toolbar" aria-label="본문 서식 도구">
           <button type="button" data-editor-command="bold"><strong>굵게</strong></button>
@@ -57,8 +57,8 @@
         <div
           id="rich_editor"
           class="rich-editor"
-          contenteditable="{% if form_values.is_imported_html %}false{% else %}true{% endif %}"
-          tabindex="{% if form_values.is_imported_html %}-1{% else %}0{% endif %}"
+          contenteditable="true"
+          tabindex="0"
           inputmode="text"
           autocapitalize="sentences"
           autocomplete="off"
@@ -71,10 +71,6 @@
         ></div>
         <p id="editor_status" class="form-help" role="status">이 영역에 ⌘+V로 붙여넣으세요. HTML·Markdown·이미지를 자동 판별하고 결과를 즉시 미리 보여줍니다.</p>
       </section>
-      {% if form_values.is_imported_html %}
-        <p class="form-help">안전하게 가져온 HTML 본문은 이 화면에서 직접 수정할 수 없습니다.</p>
-      {% endif %}
-
       {% if page_title == "콘텐츠 등록" %}
         <label for="html_file">HTML 파일 가져오기 (선택)</label>
         <input id="html_file" name="html_file" type="file" accept=".html,.htm,text/html">
