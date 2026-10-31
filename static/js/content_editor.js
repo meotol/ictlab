@@ -31,6 +31,16 @@
     if (richMode() && !editor.innerHTML.trim() && body.value) editor.textContent = body.value;
   }
 
+  function focusRichEditor() {
+    if (!richMode() || editor.getAttribute("contenteditable") === "false") return;
+    if (document.activeElement === editor) return;
+    try {
+      editor.focus({ preventScroll: true });
+    } catch (_error) {
+      editor.focus();
+    }
+  }
+
   function insertNodeAtSelection(node) {
     const selection = window.getSelection();
     let range;
@@ -232,6 +242,11 @@
     });
   });
 
+  // Do not cancel the native event: iOS needs it for caret placement and the
+  // long-press copy/paste menu. Focusing during the user gesture opens the keyboard.
+  editor.addEventListener("touchstart", focusRichEditor, { passive: true });
+  editor.addEventListener("click", focusRichEditor);
+
   imageInput.addEventListener("change", () => {
     pendingPaste = insertImageFiles(Array.from(imageInput.files || [])).then((count) => {
       status.textContent = `${count}개 이미지를 미리보기에 삽입했습니다.`;
@@ -253,7 +268,10 @@
     await pendingPaste;
     body.value = editor.innerHTML;
     replayingSubmit = true;
-    if (form.requestSubmit) form.requestSubmit(event.submitter);
+    if (form.requestSubmit) {
+      if (event.submitter) form.requestSubmit(event.submitter);
+      else form.requestSubmit();
+    }
     else form.submit();
   });
   updateMode();

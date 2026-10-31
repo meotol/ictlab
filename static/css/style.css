@@ -119,15 +119,20 @@ nav a:hover, nav a:focus { color: #0d4fa3; }
 .imported-html figcaption { color: #526074; font-size: 0.9rem; text-align: center; }
 .imported-html math { max-width: 100%; overflow-x: auto; }
 .form-help { margin: 0; color: #526074; font-size: 0.9rem; }
+[hidden] { display: none !important; }
 .rich-editor-panel { display: grid; gap: 0.75rem; }
 .rich-editor-toolbar { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
 .rich-editor-toolbar button, .rich-editor-toolbar .button-link { margin: 0; padding: 0.45rem 0.7rem; font: inherit; }
-.rich-editor { min-height: 24rem; padding: 0.8rem; overflow: auto; border: 1px solid #aeb8c4; border-radius: 0.375rem; background: #fff; line-height: 1.6; }
-.rich-editor:focus { outline: 2px solid #0d4fa3; outline-offset: 1px; }
+.rich-editor { min-height: 24rem; padding: 0.8rem; overflow: auto; border: 2px solid #7d8a99; border-radius: 0.375rem; background: #fff; color: #1f2933; line-height: 1.6; cursor: text; caret-color: #0d4fa3; overflow-wrap: anywhere; touch-action: manipulation; -webkit-overflow-scrolling: touch; -webkit-user-select: text; user-select: text; }
+.rich-editor[contenteditable="true"]:empty::before { content: attr(data-placeholder); color: #6b7280; pointer-events: none; }
+.rich-editor:focus { border-color: #0d4fa3; outline: 2px solid rgba(13, 79, 163, 0.25); outline-offset: 1px; box-shadow: 0 0 0 2px rgba(13, 79, 163, 0.12); }
 .rich-editor table { width: 100%; border-collapse: collapse; }
 .rich-editor th, .rich-editor td { padding: 0.5rem; border: 1px solid #ccd5e0; }
 .rich-editor img { max-width: 100%; height: auto; }
 .rich-editor figure, .imported-html figure { max-width: 100%; }
+@media (max-width: 640px) {
+  .rich-editor { min-height: 18rem; font-size: 16px; }
+}
 .missing-image { padding: 0.8rem; color: #7a2e0b; background: #fff4e8; border: 1px solid #e8b98e; border-radius: 0.375rem; }
 .content-form { display: grid; gap: 0.75rem; margin-top: 2rem; }
 .content-form label { margin-top: 0.75rem; font-weight: 700; }

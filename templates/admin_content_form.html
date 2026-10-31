@@ -58,9 +58,15 @@
           id="rich_editor"
           class="rich-editor"
           contenteditable="{% if form_values.is_imported_html %}false{% else %}true{% endif %}"
+          tabindex="{% if form_values.is_imported_html %}-1{% else %}0{% endif %}"
+          inputmode="text"
+          autocapitalize="sentences"
+          autocomplete="off"
+          spellcheck="true"
           role="textbox"
           aria-multiline="true"
           aria-label="서식 있는 본문"
+          data-placeholder="여기를 터치한 뒤 길게 눌러 붙여넣거나 ⌘+V / Ctrl+V를 누르세요."
           data-trusted-html="{{ 'true' if form_values.is_imported_html else 'false' }}"
         ></div>
         <p id="editor_status" class="form-help" role="status">이 영역에 ⌘+V로 붙여넣으세요. HTML·Markdown·이미지를 자동 판별하고 결과를 즉시 미리 보여줍니다.</p>
@@ -88,5 +94,5 @@
     </form>
   </section>
   <script id="initial_body" type="application/json">{{ form_values.body | tojson }}</script>
-  <script src="{{ url_for('static', filename='js/content_editor.js', v='20261031-1') }}"></script>
+  <script src="{{ url_for('static', filename='js/content_editor.js', v='20261031-2') }}"></script>
 {% endblock %}

@@ -203,6 +203,9 @@ class HtmlImportRouteTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertIn(b'value="rich_html"', response.data)
         self.assertIn(b'contenteditable="true"', response.data)
+        self.assertIn(b'tabindex="0"', response.data)
+        self.assertIn(b'inputmode="text"', response.data)
+        self.assertIn(b'content_editor.js?v=20261031-2', response.data)
         self.assertIn(b'id="editor_image"', response.data)
         self.assertIn(b'id="html_file"', response.data)
         script_path = Path(__file__).parents[1] / "static" / "js" / "content_editor.js"
@@ -217,6 +220,14 @@ class HtmlImportRouteTests(unittest.TestCase):
         self.assertIn("markMissingImage", script)
         self.assertIn("await pendingPaste", script)
         self.assertIn("fillTitleFromPastedContent", script)
+        self.assertIn('addEventListener("touchstart", focusRichEditor', script)
+        self.assertIn("{ passive: true }", script)
+        self.assertNotIn('touchstart", (event) => {\n    event.preventDefault()', script)
+        css_path = Path(__file__).parents[1] / "static" / "css" / "style.css"
+        css = css_path.read_text(encoding="utf-8")
+        self.assertIn('[hidden] { display: none !important; }', css)
+        self.assertIn('-webkit-user-select: text', css)
+        self.assertIn('touch-action: manipulation', css)
 
     def test_forged_html_marker_is_rejected_and_never_rendered(self):
         forged = f'{HTML_BODY_PREFIX}{"0" * 64} --><script>alert("forged")</script>'
