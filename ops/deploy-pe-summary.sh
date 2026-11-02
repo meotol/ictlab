@@ -5,8 +5,37 @@ PROJECT=/Users/cheolhwanbae/Projects/ictlab
 SUPPORT='/Users/cheolhwanbae/Library/Application Support/ICTLab'
 UPLOAD_ROOT="$SUPPORT/pe-summary-uploads"
 FEATURE_COMMIT=a0f46d8140cb94e9ee7c1409e6a9d98444937e5a
+ROLLBACK_COMMIT=790e0e4
 LABEL=cloud.metol.ictlab
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+service_stopped=0
+
+rollback_on_error() {
+  status=$?
+  trap - ZERR
+  set +e
+  if (( service_stopped )); then
+    echo "Deployment failed after service stop; restoring $ROLLBACK_COMMIT" >&2
+    launchctl bootout "gui/$UID/$LABEL" >/dev/null 2>&1 || true
+    git switch --detach "$ROLLBACK_COMMIT"
+    launchctl bootstrap "gui/$UID" "$PLIST"
+    recovered=0
+    for attempt in {1..30}; do
+      if curl --fail --silent http://127.0.0.1:5000/health >/dev/null; then
+        recovered=1
+        break
+      fi
+      sleep 1
+    done
+    if (( recovered )); then
+      echo "Previous ICT Lab service restored at $ROLLBACK_COMMIT" >&2
+    else
+      echo "CRITICAL: automatic service recovery health check failed" >&2
+    fi
+  fi
+  exit "$status"
+}
+trap rollback_on_error ZERR
 
 if [[ ${1:-} != --execute || -z ${2:-} ]]; then
   echo "Usage: $0 --execute <verified-backup-directory>" >&2
@@ -44,12 +73,14 @@ if [[ -n ${old_pids[1]:-} ]]; then
     sleep 1
   done
   lsof -tiTCP:5000 -sTCP:LISTEN >/dev/null 2>&1 && { echo "Existing service did not stop" >&2; exit 1; }
+  service_stopped=1
 fi
 launchctl bootout "gui/$UID/$LABEL" >/dev/null 2>&1 || true
 launchctl bootstrap "gui/$UID" "$PLIST"
 
 for attempt in {1..30}; do
   if curl --fail --silent http://127.0.0.1:5000/health >/dev/null; then
+    trap - ZERR
     echo "ICT Lab deployment healthy at $(git rev-parse HEAD)"
     exit 0
   fi
