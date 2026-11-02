@@ -7,18 +7,42 @@ UPLOAD_ROOT="$SUPPORT/pe-summary-uploads"
 FEATURE_COMMIT=a0f46d8140cb94e9ee7c1409e6a9d98444937e5a
 ROLLBACK_COMMIT=790e0e4
 LABEL=cloud.metol.ictlab
-PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+DOMAIN=system
+SYSTEM_PLIST="/Library/LaunchDaemons/$LABEL.plist"
+SOURCE_PLIST="$PROJECT/ops/$LABEL.plist"
 service_stopped=0
+BACKUP_DIR=
 
-rollback_on_error() {
+verify_inputs() {
+  cd "$PROJECT"
+  git merge-base --is-ancestor "$FEATURE_COMMIT" HEAD || { echo "PE Summary feature commit is missing" >&2; return 1; }
+  git diff --quiet && git diff --cached --quiet || { echo "Tracked worktree changes exist" >&2; return 1; }
+  [[ -f "$BACKUP_DIR/manifest.json" && -f "$BACKUP_DIR/ictlab.postgres.dump" ]] || { echo "Verified backup is missing" >&2; return 1; }
+  [[ -f "$SYSTEM_PLIST" ]] || { echo "Production system plist is missing" >&2; return 1; }
+  [[ -d "$UPLOAD_ROOT" && -O "$UPLOAD_ROOT" ]] || { echo "PE upload root owner is unexpected" >&2; return 1; }
+  upload_mode=$(stat -f '%Lp' "$UPLOAD_ROOT")
+  (( (8#$upload_mode & 8#200) != 0 )) || { echo "PE upload root owner cannot write" >&2; return 1; }
+  .venv/bin/python -c 'import hashlib,json,sys; from pathlib import Path; root=Path(sys.argv[1]); data=json.loads((root/"manifest.json").read_text()); assert all((root/name).is_file() and (root/name).stat().st_size==meta["bytes"] and hashlib.sha256((root/name).read_bytes()).hexdigest()==meta["sha256"] for name,meta in data["backup_files"].items())' "$BACKUP_DIR"
+  plutil -lint "$SOURCE_PLIST" >/dev/null
+  launchctl print "$DOMAIN/$LABEL" >/dev/null
+  if launchctl print "gui/$UID/$LABEL" >/dev/null 2>&1; then
+    echo "Conflicting user LaunchAgent is loaded" >&2
+    return 1
+  fi
+  configured_upload_root=$(.venv/bin/python -c 'from dotenv import dotenv_values; print(dotenv_values(".env").get("PE_SUMMARY_UPLOAD_ROOT", ""))')
+  [[ "$configured_upload_root" == "$UPLOAD_ROOT" ]] || { echo "Unexpected PE_SUMMARY_UPLOAD_ROOT" >&2; return 1; }
+}
+
+restore_previous_service() {
   status=$?
   trap - ZERR
   set +e
   if (( service_stopped )); then
-    echo "Deployment failed after service stop; restoring $ROLLBACK_COMMIT" >&2
-    launchctl bootout "gui/$UID/$LABEL" >/dev/null 2>&1 || true
+    echo "Deployment failed after system service stop; restoring previous service" >&2
+    sudo launchctl bootout "$DOMAIN/$LABEL" >/dev/null 2>&1 || true
     git switch --detach "$ROLLBACK_COMMIT"
-    launchctl bootstrap "gui/$UID" "$PLIST"
+    sudo install -o root -g wheel -m 0644 "$BACKUP_DIR/system-launchdaemon.plist" "$SYSTEM_PLIST"
+    sudo launchctl bootstrap "$DOMAIN" "$SYSTEM_PLIST"
     recovered=0
     for attempt in {1..30}; do
       if curl --fail --silent http://127.0.0.1:5000/health >/dev/null; then
@@ -27,64 +51,44 @@ rollback_on_error() {
       fi
       sleep 1
     done
-    if (( recovered )); then
-      echo "Previous ICT Lab service restored at $ROLLBACK_COMMIT" >&2
-    else
-      echo "CRITICAL: automatic service recovery health check failed" >&2
-    fi
+    (( recovered )) && echo "Previous ICT Lab service restored" >&2 || echo "CRITICAL: automatic recovery health check failed" >&2
   fi
   exit "$status"
 }
-trap rollback_on_error ZERR
 
-if [[ ${1:-} != --execute || -z ${2:-} ]]; then
-  echo "Usage: $0 --execute <verified-backup-directory>" >&2
+if [[ ${1:-} != --check && ${1:-} != --execute ]] || [[ -z ${2:-} ]]; then
+  echo "Usage: $0 --check|--execute <verified-backup-directory>" >&2
   exit 64
 fi
+MODE=$1
 BACKUP_DIR=$2
-
-cd "$PROJECT"
-git merge-base --is-ancestor "$FEATURE_COMMIT" HEAD || { echo "PE Summary feature commit is missing" >&2; exit 1; }
-git diff --quiet && git diff --cached --quiet || { echo "Tracked worktree changes exist" >&2; exit 1; }
-[[ -f "$BACKUP_DIR/manifest.json" && -f "$BACKUP_DIR/ictlab.postgres.dump" ]] || { echo "Verified backup is missing" >&2; exit 1; }
-[[ -d "$UPLOAD_ROOT" && -w "$UPLOAD_ROOT" ]] || { echo "PE upload root is not writable" >&2; exit 1; }
-.venv/bin/python -c 'import hashlib,json,sys; from pathlib import Path; root=Path(sys.argv[1]); data=json.loads((root/"manifest.json").read_text()); assert all((root/name).is_file() and (root/name).stat().st_size==meta["bytes"] and hashlib.sha256((root/name).read_bytes()).hexdigest()==meta["sha256"] for name,meta in data["backup_files"].items())' "$BACKUP_DIR"
-
-if ! grep -q '^PE_SUMMARY_UPLOAD_ROOT=' .env; then
-  printf '\nPE_SUMMARY_UPLOAD_ROOT="%s"\n' "$UPLOAD_ROOT" >> .env
-  chmod 600 .env
+verify_inputs
+if [[ "$MODE" == --check ]]; then
+  echo "System LaunchDaemon deployment preflight passed"
+  exit 0
 fi
-configured_upload_root=$(.venv/bin/python -c 'from dotenv import dotenv_values; print(dotenv_values(".env").get("PE_SUMMARY_UPLOAD_ROOT", ""))')
-[[ "$configured_upload_root" == "$UPLOAD_ROOT" ]] || { echo "Unexpected PE_SUMMARY_UPLOAD_ROOT" >&2; exit 1; }
+
+trap restore_previous_service ZERR
+cp "$SYSTEM_PLIST" "$BACKUP_DIR/system-launchdaemon.plist"
+chmod 600 "$BACKUP_DIR/system-launchdaemon.plist"
+print -r -- "$ROLLBACK_COMMIT" > "$BACKUP_DIR/pre-deploy-commit.txt"
+chmod 600 "$BACKUP_DIR/pre-deploy-commit.txt"
 
 source .venv/bin/activate
 alembic -c alembic.ini upgrade head
 
-cp ops/cloud.metol.ictlab.plist "$PLIST"
-chmod 644 "$PLIST"
-old_pids=("${(@f)$(lsof -tiTCP:5000 -sTCP:LISTEN 2>/dev/null || true)}")
-if [[ -n ${old_pids[1]:-} ]]; then
-  print -l -- $old_pids > "$BACKUP_DIR/pre-deploy-pids.txt"
-  master_pid=$(ps -axo pid=,ppid=,command= | awk '$2 == 1 && /gunicorn/ && /127.0.0.1:5000/ {print $1; exit}')
-  [[ -n "$master_pid" ]] || { echo "Could not identify Gunicorn master" >&2; exit 1; }
-  kill -QUIT -- "$master_pid"
-  for attempt in {1..20}; do
-    lsof -tiTCP:5000 -sTCP:LISTEN >/dev/null 2>&1 || break
-    sleep 1
-  done
-  lsof -tiTCP:5000 -sTCP:LISTEN >/dev/null 2>&1 && { echo "Existing service did not stop" >&2; exit 1; }
-  service_stopped=1
-fi
-launchctl bootout "gui/$UID/$LABEL" >/dev/null 2>&1 || true
-launchctl bootstrap "gui/$UID" "$PLIST"
+sudo launchctl bootout "$DOMAIN/$LABEL"
+service_stopped=1
+sudo install -o root -g wheel -m 0644 "$SOURCE_PLIST" "$SYSTEM_PLIST"
+sudo launchctl bootstrap "$DOMAIN" "$SYSTEM_PLIST"
 
 for attempt in {1..30}; do
   if curl --fail --silent http://127.0.0.1:5000/health >/dev/null; then
     trap - ZERR
-    echo "ICT Lab deployment healthy at $(git rev-parse HEAD)"
+    echo "ICT Lab system LaunchDaemon healthy at $(git rev-parse HEAD)"
     exit 0
   fi
   sleep 1
 done
-echo "Health check failed; run ops/rollback-pe-summary.sh immediately" >&2
+echo "Production health check failed" >&2
 exit 1

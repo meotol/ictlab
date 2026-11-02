@@ -3,6 +3,8 @@
 <plist version="1.0">
 <dict>
   <key>Label</key><string>cloud.metol.ictlab</string>
+  <key>UserName</key><string>cheolhwanbae</string>
+  <key>GroupName</key><string>staff</string>
   <key>ProgramArguments</key>
   <array>
     <string>/Users/cheolhwanbae/Projects/ictlab/.venv/bin/gunicorn</string>
@@ -15,8 +17,14 @@
     <string>ictlab:create_app()</string>
   </array>
   <key>WorkingDirectory</key><string>/Users/cheolhwanbae/Projects/ictlab</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>CONTENT_UPLOAD_ROOT</key><string>/Users/cheolhwanbae/Library/Application Support/ICTLab/content_uploads</string>
+    <key>PE_SUMMARY_UPLOAD_ROOT</key><string>/Users/cheolhwanbae/Library/Application Support/ICTLab/pe-summary-uploads</string>
+  </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
   <key>StandardOutPath</key><string>/Users/cheolhwanbae/Projects/ictlab/ictlab-server.log</string>
   <key>StandardErrorPath</key><string>/Users/cheolhwanbae/Projects/ictlab/ictlab-server-error.log</string>
 </dict>
