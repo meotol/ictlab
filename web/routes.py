@@ -217,10 +217,13 @@ def admin_pe_summary_edit(summary_id: int):
 
 def _admin_pe_summary_form(summary: PeSummary | None):
     errors = []
+    existing_media = [asset for asset in summary.assets if asset.kind in {"audio", "video"}] if summary else []
+    existing_lyrics = {asset.id: asset.lyrics or "" for asset in existing_media}
     values = {"title": summary.title if summary else "", "field": summary.field if summary else "", "keywords": summary.keywords if summary else "", "description": summary.description if summary else "", "status": "published" if summary and summary.is_published else "private", "lyrics": ""}
     if request.method == "POST":
         validate_csrf()
-        values = {name: request.form.get(name, "").strip() for name in values}
+        values = {name: request.form.get(name, "") if name == "lyrics" else request.form.get(name, "").strip() for name in values}
+        existing_lyrics = {asset.id: request.form.get(f"existing_lyrics_{asset.id}", "") for asset in existing_media}
         if not values["title"] or len(values["title"]) > 500:
             errors.append("제목을 500자 이내로 입력해주세요.")
         if not values["field"] or len(values["field"]) > 100:
@@ -239,6 +242,8 @@ def _admin_pe_summary_form(summary: PeSummary | None):
                 db_session.add(summary)
             summary.title, summary.field, summary.keywords, summary.description = values["title"], values["field"], values["keywords"], values["description"]
             summary.is_published = values["status"] == "published"
+            for asset in existing_media:
+                asset.lyrics = existing_lyrics[asset.id] or None
             saved_paths = []
             removed_paths = []
             try:
@@ -279,7 +284,7 @@ def _admin_pe_summary_form(summary: PeSummary | None):
             if not errors:
                 flash("기술사 서머리를 저장했습니다.", "success")
                 return redirect(url_for("web.pe_summary_detail", summary_id=summary.id))
-    return render_template("admin_pe_summary_form.html", summary=summary, values=values, errors=errors, csrf_token=csrf_token())
+    return render_template("admin_pe_summary_form.html", summary=summary, values=values, existing_lyrics=existing_lyrics, errors=errors, csrf_token=csrf_token())
 
 
 @web.post("/admin/pe-summaries/<int:summary_id>/delete")

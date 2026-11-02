@@ -133,6 +133,56 @@ class PeSummaryRouteTests(unittest.TestCase):
         self.assertEqual(403, self.client.get(f"/pe-summaries/{summary_id}/assets/{asset_id}/download").status_code)
         self.assertEqual(404, self.client.get(f"/pe-summaries/{summary_id}/assets/{asset_id + 999}/download").status_code)
 
+    def test_admin_edits_existing_media_lyrics_without_reuploading_files(self):
+        self.create_summary()
+        with self.app.app_context():
+            summary = get_db_session().scalar(select(PeSummary))
+            audio = next(asset for asset in summary.assets if asset.kind == "audio")
+            audio.lyrics = "기존 1절\n\nSIP & RTP <핵심>"
+            video = PeSummaryAsset(
+                summary_id=summary.id, kind="video", original_name="lecture.mp4",
+                stored_name="existing-video.mp4", mime_type="video/mp4", size_bytes=10,
+                sha256="0" * 64, conversion_status="not_applicable", lyrics=None,
+            )
+            get_db_session().add(video)
+            get_db_session().commit()
+            summary_id, audio_id, video_id = summary.id, audio.id, video.id
+            original_assets = [
+                (asset.id, asset.original_name, asset.stored_name)
+                for asset in get_db_session().scalars(
+                    select(PeSummaryAsset).where(PeSummaryAsset.summary_id == summary.id).order_by(PeSummaryAsset.id)
+                ).all()
+            ]
+
+        edit = self.client.get(f"/admin/pe-summaries/{summary_id}/edit")
+        self.assertIn(f'name="existing_lyrics_{audio_id}"'.encode(), edit.data)
+        self.assertIn("기존 1절\n\nSIP &amp; RTP &lt;핵심&gt;".encode(), edit.data)
+        self.assertIn(f'name="existing_lyrics_{video_id}"'.encode(), edit.data)
+        self.assertIn(b'name="lyrics"', edit.data)
+
+        updated_audio = "  수정 1절\n\nIMS/SIP & RTP <원문>  "
+        updated_video = "새 영상 가사\n2행: 5G·AI #1"
+        response = self.client.post(f"/admin/pe-summaries/{summary_id}/edit", data={
+            "csrf_token": "csrf", "title": "OSI 7계층 핵심", "field": "정보통신망",
+            "keywords": "OSI, 네트워크", "description": "요약", "status": "published",
+            "lyrics": "", f"existing_lyrics_{audio_id}": updated_audio,
+            f"existing_lyrics_{video_id}": updated_video,
+        })
+        self.assertEqual(302, response.status_code)
+
+        with self.app.app_context():
+            assets = get_db_session().scalars(
+                select(PeSummaryAsset).where(PeSummaryAsset.summary_id == summary_id).order_by(PeSummaryAsset.id)
+            ).all()
+            self.assertEqual(original_assets, [(asset.id, asset.original_name, asset.stored_name) for asset in assets])
+            lyrics = {asset.id: asset.lyrics for asset in assets}
+            self.assertEqual(updated_audio, lyrics[audio_id])
+            self.assertEqual(updated_video, lyrics[video_id])
+
+        detail = self.client.get(f"/pe-summaries/{summary_id}")
+        self.assertIn("수정 1절\n\nIMS/SIP &amp; RTP &lt;원문&gt;".encode(), detail.data)
+        self.assertIn("새 영상 가사\n2행: 5G·AI #1".encode(), detail.data)
+
     def test_private_summary_and_files_are_hidden_from_public(self):
         self.create_summary("private")
         with self.app.app_context():
