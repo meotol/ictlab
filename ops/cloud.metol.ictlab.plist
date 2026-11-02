@@ -4,7 +4,16 @@
 <dict>
   <key>Label</key><string>cloud.metol.ictlab</string>
   <key>ProgramArguments</key>
-  <array><string>/Users/cheolhwanbae/Projects/ictlab/start_ictlab.sh</string></array>
+  <array>
+    <string>/Users/cheolhwanbae/Projects/ictlab/.venv/bin/gunicorn</string>
+    <string>--chdir</string><string>/Users/cheolhwanbae/Projects/ictlab</string>
+    <string>--pythonpath</string><string>/Users/cheolhwanbae/Projects</string>
+    <string>--bind</string><string>127.0.0.1:5000</string>
+    <string>--workers</string><string>1</string>
+    <string>--access-logfile</string><string>-</string>
+    <string>--error-logfile</string><string>-</string>
+    <string>ictlab:create_app()</string>
+  </array>
   <key>WorkingDirectory</key><string>/Users/cheolhwanbae/Projects/ictlab</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>

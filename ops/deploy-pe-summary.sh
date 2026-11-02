@@ -36,7 +36,13 @@ chmod 644 "$PLIST"
 old_pids=(${(f)$(lsof -tiTCP:5000 -sTCP:LISTEN 2>/dev/null || true)})
 if (( ${#old_pids} )); then
   print -l -- $old_pids > "$BACKUP_DIR/pre-deploy-pids.txt"
-  kill -TERM -- $old_pids 2>/dev/null || true
+  master_pids=()
+  for pid in $old_pids; do
+    parent_pid=$(ps -o ppid= -p "$pid" | tr -d ' ')
+    [[ "$parent_pid" == 1 ]] && master_pids+=("$pid")
+  done
+  (( ${#master_pids} )) || { echo "Could not identify Gunicorn master" >&2; exit 1; }
+  kill -QUIT -- $master_pids
   for attempt in {1..20}; do
     lsof -tiTCP:5000 -sTCP:LISTEN >/dev/null 2>&1 || break
     sleep 1
