@@ -34,7 +34,7 @@ verify_inputs() {
 }
 
 restore_previous_service() {
-  status=$?
+  exit_code=$?
   trap - ZERR
   set +e
   if (( service_stopped )); then
@@ -53,7 +53,7 @@ restore_previous_service() {
     done
     (( recovered )) && echo "Previous ICT Lab service restored" >&2 || echo "CRITICAL: automatic recovery health check failed" >&2
   fi
-  exit "$status"
+  exit "$exit_code"
 }
 
 if [[ ${1:-} != --check && ${1:-} != --execute ]] || [[ -z ${2:-} ]]; then
