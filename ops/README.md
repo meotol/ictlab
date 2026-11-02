@@ -10,23 +10,28 @@ LaunchAgent with the same label. The scripts are inert without `--execute`.
 Run the read-only preflight before the approved maintenance window:
 
 ```sh
-ops/deploy-pe-summary.sh --check "/Users/cheolhwanbae/Library/Application Support/ICTLab/backups/<timestamp>"
+/Users/cheolhwanbae/Projects/ictlab-pe-release/ops/deploy-pe-summary.sh --check "/Users/cheolhwanbae/Library/Application Support/ICTLab/backups/<timestamp>"
 ```
 
-After approval, run:
+After approval, run the release-worktree copy of the script. It switches the
+production worktree to the reviewed commit and restarts the already registered
+system LaunchDaemon with `kickstart -k`; it does not bootout, bootstrap, or
+replace the plist:
 
 ```sh
-ops/deploy-pe-summary.sh --execute "/Users/cheolhwanbae/Library/Application Support/ICTLab/backups/<timestamp>"
+/Users/cheolhwanbae/Projects/ictlab-pe-release/ops/deploy-pe-summary.sh --execute "/Users/cheolhwanbae/Library/Application Support/ICTLab/backups/<timestamp>"
 ```
 
 If the health or smoke checks fail, immediately run:
 
 ```sh
-ops/rollback-pe-summary.sh --execute "/Users/cheolhwanbae/Library/Application Support/ICTLab/backups/<timestamp>"
+/Users/cheolhwanbae/Projects/ictlab-pe-release/ops/rollback-pe-summary.sh --execute "/Users/cheolhwanbae/Library/Application Support/ICTLab/backups/<timestamp>"
 ```
 
-Deployment backs up the live system plist and rollback commit into the verified
-backup directory before stopping the service. Rollback restores both and leaves
-the additive PE Summary tables in place. Restore PostgreSQL and uploads from the
-matched backup only if the database itself must be reverted. Do not copy SQLite
-test data, test accounts, or the port 8082 LaunchAgent into production.
+Deployment records the live Git commit in the verified backup directory before
+switching code. Its preflight requires the PE Summary tables and Alembic revision
+`20261102_01` to exist, so it never applies a duplicate migration. Rollback restores
+the recorded Git commit and uses the same `kickstart -k` restart, leaving the
+registered plist, PE Summary tables, uploads, and the port 8082 test service in
+place. Restore PostgreSQL and uploads from the matched backup only if the database
+itself must be reverted. Do not copy SQLite test data or test accounts to production.
