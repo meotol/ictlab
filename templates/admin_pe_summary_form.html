@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}기술사 서머리 관리 · ICT Lab{% endblock %}
+{% block content %}<section class="admin-page"><p class="eyebrow">Administrator</p><h1>기술사 서머리 {{ '수정' if summary else '등록' }}</h1>
+{% if errors %}<div class="form-errors" role="alert"><ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul></div>{% endif %}
+<form method="post" enctype="multipart/form-data" class="content-form"><input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<label for="title">제목</label><input id="title" name="title" maxlength="500" required value="{{ values.title }}">
+<label for="field">기술사 출제 분야</label><input id="field" name="field" maxlength="100" required value="{{ values.field }}" placeholder="예: 정보통신망">
+<label for="keywords">검색 키워드</label><input id="keywords" name="keywords" maxlength="1000" value="{{ values.keywords }}" placeholder="쉼표로 구분">
+<label for="description">설명</label><textarea id="description" name="description" rows="8">{{ values.description }}</textarea>
+<label for="files">문서·암기용 미디어 (여러 개 선택)</label><input id="files" name="files" type="file" multiple accept=".pdf,.docx,.hwp,.hwpx,.mp3,.wav,.mp4"><p class="form-help">PDF, DOCX, HWP, HWPX, MP3, WAV, MP4만 허용됩니다. 원본은 보존됩니다.</p>
+<label for="lyrics">새로 올리는 음악·영상의 가사 (선택)</label><textarea id="lyrics" name="lyrics" rows="6">{{ values.lyrics }}</textarea>
+{% if summary and summary.assets %}<fieldset><legend>기존 첨부</legend>{% for asset in summary.assets %}<label><input type="checkbox" name="delete_asset" value="{{ asset.id }}"> 삭제 — {{ asset.original_name }}</label>{% if asset.conversion_status == 'converted_unverified' %}<label><input type="checkbox" name="verify_asset" value="{{ asset.id }}"{% if asset.preview_verified %} checked{% endif %}> {{ asset.original_name }} 변환본의 내용·레이아웃을 원본과 대조해 검증함</label>{% endif %}{% endfor %}</fieldset>{% endif %}
+<label for="status">공개 상태</label><select id="status" name="status"><option value="private"{% if values.status == 'private' %} selected{% endif %}>비공개</option><option value="published"{% if values.status == 'published' %} selected{% endif %}>공개</option></select><button type="submit">저장</button></form></section>{% endblock %}

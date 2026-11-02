@@ -26,6 +26,13 @@ class Config:
     MAX_HTML_IMPORT_BYTES = 12 * 1024 * 1024
     MAX_HTML_IMAGE_BYTES = 5 * 1024 * 1024
     MAX_HTML_IMAGES = 20
+    PE_SUMMARY_UPLOAD_ROOT = os.getenv(
+        "PE_SUMMARY_UPLOAD_ROOT",
+        str(Path(__file__).resolve().parent / "instance" / "pe_summary_uploads"),
+    )
+    PE_SUMMARY_MAX_FILE_BYTES = int(os.getenv("PE_SUMMARY_MAX_FILE_BYTES", 100 * 1024 * 1024))
+    PE_SUMMARY_MAX_FILES = int(os.getenv("PE_SUMMARY_MAX_FILES", 20))
+    PE_SUMMARY_CONVERSION_TIMEOUT = int(os.getenv("PE_SUMMARY_CONVERSION_TIMEOUT", 120))
 
 
 def validate_config(config) -> None:

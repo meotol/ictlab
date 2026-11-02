@@ -7,6 +7,7 @@ from .content import (
     Content,
 )
 from .news_article import NewsArticle
+from .pe_summary import PeSummary, PeSummaryAsset
 
 
 __all__ = [
@@ -15,4 +16,6 @@ __all__ = [
     "CONTENT_TYPE_PE_QA",
     "Content",
     "NewsArticle",
+    "PeSummary",
+    "PeSummaryAsset",
 ]

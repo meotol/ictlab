@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}정보통신기술사 서머리 · ICT Lab{% endblock %}
+{% block content %}
+<section class="content-page summary-page">
+  <p class="eyebrow">Professional Engineer Summary</p>
+  <h1>정보통신기술사 서머리</h1>
+  <form class="summary-search" method="get">
+    <label>제목·키워드 검색<input type="search" name="q" maxlength="100" value="{{ query_text }}"></label>
+    <label>출제 분야<select name="field"><option value="">전체 분야</option>{% for field in fields %}<option{% if field == selected_field %} selected{% endif %}>{{ field }}</option>{% endfor %}</select></label>
+    <button type="submit">검색</button>
+  </form>
+  {% if session.get("is_admin") %}<p><a class="button-link" href="{{ url_for('web.admin_pe_summary_new') }}">새 서머리 등록</a></p>{% endif %}
+  {% if summaries %}<ul class="summary-grid">{% for summary in summaries %}<li><a href="{{ url_for('web.pe_summary_detail', summary_id=summary.id) }}"><span class="summary-field">{{ summary.field }}</span><strong>{{ summary.title }}</strong><small>{{ summary.keywords }}</small></a></li>{% endfor %}</ul>{% else %}<p>조건에 맞는 공개 자료가 없습니다.</p>{% endif %}
+</section>
+{% endblock %}

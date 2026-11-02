@@ -6,7 +6,7 @@
     <meta name="description" content="ICT Lab at ict.metol.cloud">
     <title>{% block title %}ICT Lab{% endblock %}</title>
     <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261031-3') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20261102-1') }}">
   </head>
   <body>
     <header class="site-header">
@@ -17,6 +17,7 @@
           <li><a href="{{ url_for('web.news') }}">ICT News</a></li>
           <li><a href="#">Technology</a></li>
           <li><a href="{{ url_for('web.professional_engineer') }}">Professional Engineer</a></li>
+          <li><a href="{{ url_for('web.pe_summaries') }}">PE Summary</a></li>
           <li><a href="#">Archive</a></li>
           <li><a href="#">About</a></li>
         </ul>

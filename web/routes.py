@@ -3,10 +3,11 @@ from pathlib import Path
 import re
 import secrets
 
-from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, send_from_directory, session, url_for
+from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, send_file, send_from_directory, session, url_for
 from markupsafe import Markup
 from sqlalchemy import or_, select
 from werkzeug.security import check_password_hash
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from ictlab.categories import CATEGORY_INTERNATIONAL, CATEGORY_OPTIONS
 from ictlab.db import get_db_session
@@ -16,7 +17,10 @@ from ictlab.models import (
     CONTENT_TYPE_PE_QA,
     Content,
     NewsArticle,
+    PeSummary,
+    PeSummaryAsset,
 )
+from ictlab.pe_summary_files import UploadError, make_pdf_preview, save_upload
 from ictlab.web.auth import admin_login_required, csrf_token, safe_next_url, validate_csrf
 from ictlab.html_import import (
     HTML_BODY_PREFIX,
@@ -118,6 +122,182 @@ def professional_engineer():
         .order_by(Content.authored_at.desc(), Content.id.desc())
     ).all()
     return render_template("professional_engineer.html", contents=contents)
+
+
+@web.get("/pe-summaries")
+def pe_summaries():
+    query_text = request.args.get("q", "").strip()[:100]
+    selected_field = request.args.get("field", "").strip()[:100]
+    statement = select(PeSummary).where(PeSummary.is_published.is_(True))
+    if selected_field:
+        statement = statement.where(PeSummary.field == selected_field)
+    if query_text:
+        pattern = f"%{query_text}%"
+        statement = statement.where(or_(PeSummary.title.ilike(pattern), PeSummary.keywords.ilike(pattern)))
+    db_session = get_db_session()
+    summaries = db_session.scalars(statement.order_by(PeSummary.created_at.desc(), PeSummary.id.desc())).all()
+    fields = db_session.scalars(select(PeSummary.field).where(PeSummary.is_published.is_(True)).distinct().order_by(PeSummary.field)).all()
+    return render_template("pe_summary_list.html", summaries=summaries, fields=fields, query_text=query_text, selected_field=selected_field)
+
+
+def _visible_summary(summary_id: int) -> PeSummary:
+    summary = get_db_session().get(PeSummary, summary_id)
+    if summary is None or (not summary.is_published and not session.get("is_admin")):
+        abort(404)
+    return summary
+
+
+@web.get("/pe-summaries/<int:summary_id>")
+def pe_summary_detail(summary_id: int):
+    summary = _visible_summary(summary_id)
+    serializer = URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt="pe-summary-preview")
+    preview_tokens = {
+        asset.id: serializer.dumps({"summary": summary.id, "asset": asset.id, "sha256": asset.sha256})
+        for asset in summary.assets
+        if asset.kind == "document" and asset.preview_name
+    }
+    return render_template("pe_summary_detail.html", summary=summary, preview_tokens=preview_tokens)
+
+
+@web.get("/pe-summaries/<int:summary_id>/assets/<int:asset_id>/<mode>")
+def pe_summary_asset(summary_id: int, asset_id: int, mode: str):
+    summary = _visible_summary(summary_id)
+    asset = get_db_session().get(PeSummaryAsset, asset_id)
+    if asset is None or asset.summary_id != summary.id or mode not in {"view", "download", "preview", "original"}:
+        abort(404)
+    root = Path(current_app.config["PE_SUMMARY_UPLOAD_ROOT"]) / str(summary.id)
+    if mode == "preview":
+        token = request.headers.get("X-ICTLab-Preview", "")
+        serializer = URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt="pe-summary-preview")
+        try:
+            claims = serializer.loads(token, max_age=3600)
+        except (BadSignature, SignatureExpired):
+            abort(403)
+        if claims != {"summary": summary.id, "asset": asset.id, "sha256": asset.sha256}:
+            abort(403)
+        if not asset.preview_name or (asset.conversion_status == "converted_unverified" and not asset.preview_verified and not session.get("is_admin")):
+            abort(404)
+        # Never expose an original document through the public preview route.
+        if asset.preview_name == asset.stored_name:
+            abort(404)
+        path, mimetype, download_name, as_attachment = root / asset.preview_name, "application/pdf", "ict-lab-reading-copy.pdf", False
+    else:
+        if (asset.kind == "document" or mode == "download") and not session.get("is_admin"):
+            abort(403)
+        if asset.kind != "document" and mode == "original":
+            abort(404)
+        path, mimetype, download_name = root / asset.stored_name, asset.mime_type, asset.original_name
+        as_attachment = mode == "download" or (mode == "view" and asset.kind == "document" and asset.mime_type != "application/pdf")
+    if not path.is_file():
+        abort(404)
+    response = send_file(path, mimetype=mimetype, as_attachment=as_attachment, download_name=download_name, conditional=True, etag=True, max_age=3600)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Content-Security-Policy"] = "default-src 'none'; media-src 'self'; style-src 'unsafe-inline'"
+    if asset.kind == "document" and mode != "preview":
+        response.headers["Cache-Control"] = "private, no-store"
+    elif mode == "preview":
+        response.headers["Cache-Control"] = "private, max-age=3600"
+    return response
+
+
+@web.route("/admin/pe-summaries/new", methods=["GET", "POST"])
+@admin_login_required
+def admin_pe_summary_new():
+    return _admin_pe_summary_form(None)
+
+
+@web.route("/admin/pe-summaries/<int:summary_id>/edit", methods=["GET", "POST"])
+@admin_login_required
+def admin_pe_summary_edit(summary_id: int):
+    summary = get_db_session().get(PeSummary, summary_id)
+    if summary is None:
+        abort(404)
+    return _admin_pe_summary_form(summary)
+
+
+def _admin_pe_summary_form(summary: PeSummary | None):
+    errors = []
+    values = {"title": summary.title if summary else "", "field": summary.field if summary else "", "keywords": summary.keywords if summary else "", "description": summary.description if summary else "", "status": "published" if summary and summary.is_published else "private", "lyrics": ""}
+    if request.method == "POST":
+        validate_csrf()
+        values = {name: request.form.get(name, "").strip() for name in values}
+        if not values["title"] or len(values["title"]) > 500:
+            errors.append("제목을 500자 이내로 입력해주세요.")
+        if not values["field"] or len(values["field"]) > 100:
+            errors.append("출제 분야를 100자 이내로 입력해주세요.")
+        if len(values["keywords"]) > 1000:
+            errors.append("키워드는 1,000자 이내로 입력해주세요.")
+        if values["status"] not in {"published", "private"}:
+            errors.append("올바른 공개 상태를 선택해주세요.")
+        uploads = [item for item in request.files.getlist("files") if item.filename]
+        if len(uploads) > current_app.config.get("PE_SUMMARY_MAX_FILES", 20):
+            errors.append("한 번에 업로드할 수 있는 파일 수를 초과했습니다.")
+        if not errors:
+            db_session = get_db_session()
+            if summary is None:
+                summary = PeSummary()
+                db_session.add(summary)
+            summary.title, summary.field, summary.keywords, summary.description = values["title"], values["field"], values["keywords"], values["description"]
+            summary.is_published = values["status"] == "published"
+            saved_paths = []
+            removed_paths = []
+            try:
+                db_session.flush()
+                directory = Path(current_app.config["PE_SUMMARY_UPLOAD_ROOT"]) / str(summary.id)
+                for upload in uploads:
+                    info = save_upload(upload, directory, current_app.config.get("PE_SUMMARY_MAX_FILE_BYTES", 100 * 1024 * 1024))
+                    saved_paths.append(info["path"])
+                    preview_name, conversion_status = make_pdf_preview(info["path"], directory, current_app.config.get("PE_SUMMARY_CONVERSION_TIMEOUT", 120)) if info["kind"] == "document" else (None, "not_applicable")
+                    if preview_name:
+                        saved_paths.append(directory / preview_name)
+                    asset = PeSummaryAsset(summary_id=summary.id, kind=info["kind"], original_name=info["original_name"], stored_name=info["stored_name"], mime_type=info["mime_type"], size_bytes=info["size_bytes"], sha256=info["sha256"], preview_name=preview_name, conversion_status=conversion_status, lyrics=values["lyrics"] or None if info["kind"] in {"audio", "video"} else None)
+                    db_session.add(asset)
+                for raw_id in request.form.getlist("delete_asset"):
+                    if raw_id.isdigit():
+                        asset = next((a for a in summary.assets if a.id == int(raw_id)), None)
+                        if asset:
+                            for filename in {asset.stored_name, asset.preview_name} - {None}:
+                                removed_paths.append(directory / filename)
+                            db_session.delete(asset)
+                verified_ids = {int(value) for value in request.form.getlist("verify_asset") if value.isdigit()}
+                for asset in summary.assets:
+                    if asset.conversion_status == "converted_unverified":
+                        asset.preview_verified = asset.id in verified_ids
+                db_session.commit()
+                for path in removed_paths:
+                    path.unlink(missing_ok=True)
+            except UploadError as exc:
+                db_session.rollback()
+                for path in saved_paths:
+                    path.unlink(missing_ok=True)
+                errors.append(str(exc))
+            except Exception:
+                db_session.rollback()
+                for path in saved_paths:
+                    path.unlink(missing_ok=True)
+                raise
+            if not errors:
+                flash("기술사 서머리를 저장했습니다.", "success")
+                return redirect(url_for("web.pe_summary_detail", summary_id=summary.id))
+    return render_template("admin_pe_summary_form.html", summary=summary, values=values, errors=errors, csrf_token=csrf_token())
+
+
+@web.post("/admin/pe-summaries/<int:summary_id>/delete")
+@admin_login_required
+def admin_pe_summary_delete(summary_id: int):
+    validate_csrf()
+    db_session = get_db_session()
+    summary = db_session.get(PeSummary, summary_id)
+    if summary is None:
+        abort(404)
+    directory = Path(current_app.config["PE_SUMMARY_UPLOAD_ROOT"]) / str(summary.id)
+    db_session.delete(summary)
+    db_session.commit()
+    if directory.is_dir():
+        import shutil
+        shutil.rmtree(directory)
+    flash("기술사 서머리를 삭제했습니다.", "success")
+    return redirect(url_for("web.pe_summaries"))
 
 
 @web.get("/contents/<int:content_id>")
