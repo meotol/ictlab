@@ -33,16 +33,12 @@ alembic -c alembic.ini upgrade head
 
 cp ops/cloud.metol.ictlab.plist "$PLIST"
 chmod 644 "$PLIST"
-old_pids=(${(f)$(lsof -tiTCP:5000 -sTCP:LISTEN 2>/dev/null || true)})
-if (( ${#old_pids} )); then
+old_pids=("${(@f)$(lsof -tiTCP:5000 -sTCP:LISTEN 2>/dev/null || true)}")
+if [[ -n ${old_pids[1]:-} ]]; then
   print -l -- $old_pids > "$BACKUP_DIR/pre-deploy-pids.txt"
-  master_pids=()
-  for pid in $old_pids; do
-    parent_pid=$(ps -o ppid= -p "$pid" | tr -d ' ')
-    [[ "$parent_pid" == 1 ]] && master_pids+=("$pid")
-  done
-  (( ${#master_pids} )) || { echo "Could not identify Gunicorn master" >&2; exit 1; }
-  kill -QUIT -- $master_pids
+  master_pid=$(ps -axo pid=,ppid=,command= | awk '$2 == 1 && /gunicorn/ && /127.0.0.1:5000/ {print $1; exit}')
+  [[ -n "$master_pid" ]] || { echo "Could not identify Gunicorn master" >&2; exit 1; }
+  kill -QUIT -- "$master_pid"
   for attempt in {1..20}; do
     lsof -tiTCP:5000 -sTCP:LISTEN >/dev/null 2>&1 || break
     sleep 1
