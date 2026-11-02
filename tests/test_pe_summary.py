@@ -159,6 +159,10 @@ class PeSummaryRouteTests(unittest.TestCase):
         self.assertIn("기존 1절\n\nSIP &amp; RTP &lt;핵심&gt;".encode(), edit.data)
         self.assertIn(f'name="existing_lyrics_{video_id}"'.encode(), edit.data)
         self.assertIn(b'name="lyrics"', edit.data)
+        self.assertIn(b"data-new-media-lyrics hidden", edit.data)
+        form_script = (Path(__file__).parents[1] / "static/js/pe_summary_form.js").read_text()
+        self.assertIn("files.addEventListener(\"change\"", form_script)
+        self.assertIn("(mp3|wav|mp4)", form_script)
 
         updated_audio = "  수정 1절\n\nIMS/SIP & RTP <원문>  "
         updated_video = "새 영상 가사\n2행: 5G·AI #1"
