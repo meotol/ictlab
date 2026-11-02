@@ -76,6 +76,11 @@ class PeSummaryRouteTests(unittest.TestCase):
         self.assertIn("OSI 7계층 핵심".encode(), listing.data)
         detail = self.client.get(f"/pe-summaries/{summary_id}")
         self.assertIn("ICT Lab | 기술사 서머리 | 열람용".encode(), (Path(__file__).parents[1] / "static/js/pe_summary_player.js").read_bytes())
+        self.assertIn(b'controlslist="nodownload"', detail.data)
+        self.assertIn(b'id="audio_repeat"', detail.data)
+        self.assertIn(b'aria-controls="summary_audio" aria-pressed="false"', detail.data)
+        self.assertIn("반복재생 켜기".encode(), detail.data)
+        self.assertNotIn(b' loop', detail.data)
         self.assertIn(b"data-zoom-in", detail.data)
         self.assertIn(b"data-pdf-pages", detail.data)
         self.assertIn(b"pdf.min.mjs", (Path(__file__).parents[1] / "static/js/pe_summary_player.js").read_bytes())
@@ -209,6 +214,29 @@ class PeSummaryRouteTests(unittest.TestCase):
         with self.client.session_transaction() as browser_session:
             browser_session.clear()
         self.assertEqual(302, self.client.get("/admin/pe-summaries/new").status_code)
+
+    def test_audio_download_is_admin_only_and_not_cached(self):
+        self.create_summary()
+        with self.app.app_context():
+            audio = get_db_session().scalar(select(PeSummaryAsset).where(PeSummaryAsset.kind == "audio"))
+            summary_id, audio_id = audio.summary_id, audio.id
+        detail_url = f"/pe-summaries/{summary_id}"
+        download_url = f"{detail_url}/assets/{audio_id}/download"
+        detail = self.client.get(detail_url)
+        self.assertNotIn(b'controlslist="nodownload"', detail.data)
+        response = self.client.get(download_url)
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(MP3, response.data)
+        self.assertIn("attachment", response.headers["Content-Disposition"])
+        self.assertEqual("private, no-store", response.headers["Cache-Control"])
+        response.close()
+        with self.client.session_transaction() as browser_session:
+            browser_session.clear()
+        self.assertEqual(403, self.client.get(download_url).status_code)
+        self.assertIn(b'controlslist="nodownload"', self.client.get(detail_url).data)
+        stream = self.client.get(f"{detail_url}/assets/{audio_id}/view", headers={"Range": "bytes=0-2"})
+        self.assertEqual(206, stream.status_code)
+        stream.close()
 
     def test_rejects_hwp_with_only_an_ole_magic_header(self):
         fake_hwp = bytes.fromhex("D0CF11E0A1B11AE1") + bytes(504)

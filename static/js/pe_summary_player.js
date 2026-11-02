@@ -5,6 +5,15 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("../vendor/pdfjs/pdf.worker.min
 (() => {
   const select = document.getElementById("audio_select");
   const player = document.getElementById("summary_audio");
+  const repeat = document.getElementById("audio_repeat");
+  if (player && repeat) {
+    player.loop = false;
+    repeat.addEventListener("click", () => {
+      player.loop = !player.loop;
+      repeat.setAttribute("aria-pressed", String(player.loop));
+      repeat.textContent = player.loop ? "반복재생 끄기" : "반복재생 켜기";
+    });
+  }
   if (select && player) {
     select.addEventListener("change", () => {
       const wasPlaying = !player.paused;

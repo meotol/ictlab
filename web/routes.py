@@ -193,7 +193,7 @@ def pe_summary_asset(summary_id: int, asset_id: int, mode: str):
     response = send_file(path, mimetype=mimetype, as_attachment=as_attachment, download_name=download_name, conditional=True, etag=True, max_age=3600)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Content-Security-Policy"] = "default-src 'none'; media-src 'self'; style-src 'unsafe-inline'"
-    if asset.kind == "document" and mode != "preview":
+    if mode == "download" or (asset.kind == "document" and mode != "preview"):
         response.headers["Cache-Control"] = "private, no-store"
     elif mode == "preview":
         response.headers["Cache-Control"] = "private, max-age=3600"
