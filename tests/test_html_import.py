@@ -93,6 +93,9 @@ class HtmlImportRouteTests(unittest.TestCase):
             browser_session["csrf_token"] = "test-csrf"
 
     def tearDown(self):
+        # Release pooled SQLite handles before deleting temporary files on Windows.
+        with self.app.app_context():
+            get_db_engine().dispose()
         self.tempdir.cleanup()
 
     def test_admin_import_persists_sanitized_html_and_image(self):

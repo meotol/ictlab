@@ -5,11 +5,21 @@ import subprocess
 import uuid
 import zipfile
 import unicodedata
+import warnings
+
+from PIL import Image, UnidentifiedImageError
 
 from werkzeug.datastructures import FileStorage
 
 
+IMAGE_FORMATS = {".jpg": "JPEG", ".jpeg": "JPEG", ".png": "PNG", ".webp": "WEBP"}
+MAX_IMAGE_PIXELS = 25_000_000
+
 ALLOWED = {
+    ".jpg": ("image", "image/jpeg"),
+    ".jpeg": ("image", "image/jpeg"),
+    ".png": ("image", "image/png"),
+    ".webp": ("image", "image/webp"),
     ".pdf": ("document", "application/pdf"),
     ".docx": ("document", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
     ".hwp": ("document", "application/x-hwp"),
@@ -83,6 +93,8 @@ def save_upload(upload: FileStorage, directory: Path, max_bytes: int) -> dict:
     extension = Path(original).suffix.lower()
     if not original or extension not in ALLOWED:
         raise UploadError("허용되지 않은 파일 형식입니다.")
+    if extension in IMAGE_FORMATS and upload.mimetype not in {ALLOWED[extension][1], "application/octet-stream", ""}:
+        raise UploadError("이미지 확장자와 MIME 형식이 일치하지 않습니다.")
     directory.mkdir(parents=True, exist_ok=True)
     directory.chmod(0o700)
     stored_name = f"{uuid.uuid4().hex}{extension}"
@@ -100,7 +112,21 @@ def save_upload(upload: FileStorage, directory: Path, max_bytes: int) -> dict:
         destination.chmod(0o600)
         with destination.open("rb") as source:
             header = source.read(16)
-        if not _valid_signature(extension, header, destination):
+        if extension in IMAGE_FORMATS:
+            try:
+                with warnings.catch_warnings():
+                    warnings.simplefilter("error", Image.DecompressionBombWarning)
+                    with Image.open(destination) as image:
+                        if image.format != IMAGE_FORMATS[extension] or image.width * image.height > MAX_IMAGE_PIXELS or getattr(image, "n_frames", 1) != 1:
+                            raise UploadError("이미지 형식이 일치하지 않거나 크기 제한(2,500만 화소)을 초과했거나 애니메이션입니다.")
+                        image.verify()
+                    with Image.open(destination) as image:
+                        image.load()
+            except UploadError:
+                raise
+            except (OSError, ValueError, SyntaxError, UnidentifiedImageError, Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+                raise UploadError(f"{original}: 유효한 이미지 파일이 아닙니다.") from exc
+        elif not _valid_signature(extension, header, destination):
             raise UploadError(f"{original}: 확장자와 파일 시그니처가 일치하지 않습니다.")
     except Exception:
         destination.unlink(missing_ok=True)

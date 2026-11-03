@@ -47,6 +47,9 @@ class PeSummaryRouteTests(unittest.TestCase):
             browser_session["csrf_token"] = "csrf"
 
     def tearDown(self):
+        # Release pooled SQLite handles before deleting temporary files on Windows.
+        with self.app.app_context():
+            get_db_engine().dispose()
         self.tempdir.cleanup()
 
     def create_summary(self, status="published"):
@@ -58,6 +61,100 @@ class PeSummaryRouteTests(unittest.TestCase):
                 (BytesIO(MP3), "memory.mp3", "audio/mpeg"),
             ],
         }, content_type="multipart/form-data")
+
+    def image_bytes(self, fmt="PNG"):
+        from PIL import Image
+        stream = BytesIO()
+        Image.new("RGB", (16, 12), "blue").save(stream, fmt)
+        return stream.getvalue()
+
+    def post_images(self, files, summary_id=None, **extra):
+        data = {"csrf_token": "csrf", "title": "Images", "field": "Test", "status": "published", "files": files}
+        data.update(extra)
+        url = f"/admin/pe-summaries/{summary_id}/edit" if summary_id else "/admin/pe-summaries/new"
+        return self.client.post(url, data=data, content_type="multipart/form-data")
+
+    def test_images_create_edit_view_permissions_and_delete(self):
+        files = [(BytesIO(self.image_bytes(fmt)), name, mime) for fmt, name, mime in [
+            ("JPEG", "photo.JPG", "image/jpeg"), ("JPEG", "photo.jpeg", "image/jpeg"),
+            ("PNG", "diagram.png", "image/png"), ("WEBP", "diagram.webp", "image/webp")]]
+        self.assertEqual(302, self.post_images(files).status_code)
+        with self.app.app_context():
+            summary = get_db_session().scalar(select(PeSummary))
+            sid = summary.id
+            assets = [(a.id, a.mime_type, a.stored_name) for a in summary.assets]
+            self.assertTrue(all(a.kind == "image" for a in summary.assets))
+        form = self.client.get(f"/admin/pe-summaries/{sid}/edit")
+        self.assertIn(b"image/webp", form.data)
+        self.assertIn(b"<img", form.data)
+        for aid, mime, name in assets:
+            url = f"/pe-summaries/{sid}/assets/{aid}"
+            response = self.client.get(url + "/download")
+            self.assertEqual(200, response.status_code)
+            self.assertTrue(response.headers["Content-Disposition"].startswith("attachment"))
+            response.close()
+        with self.client.session_transaction() as session:
+            session.clear()
+        self.assertIn(b"<img", self.client.get(f"/pe-summaries/{sid}").data)
+        for aid, mime, name in assets:
+            url = f"/pe-summaries/{sid}/assets/{aid}"
+            response = self.client.get(url + "/view")
+            self.assertEqual(200, response.status_code)
+            self.assertEqual(mime, response.mimetype)
+            self.assertEqual("nosniff", response.headers["X-Content-Type-Options"])
+            self.assertEqual("private, no-store", response.headers["Cache-Control"])
+            response.close()
+            self.assertEqual(403, self.client.get(url + "/download").status_code)
+            self.assertEqual(404, self.client.get(url + "/original").status_code)
+            self.assertEqual(404, self.client.get(f"/pe-summaries/{sid+1}/assets/{aid}/view").status_code)
+        with self.client.session_transaction() as session:
+            session["is_admin"] = True
+            session["csrf_token"] = "csrf"
+        self.assertEqual(302, self.post_images([(BytesIO(self.image_bytes()), "new.png", "image/png")], sid,
+            delete_asset=str(assets[0][0]), status="private").status_code)
+        root = Path(self.app.config["PE_SUMMARY_UPLOAD_ROOT"]) / str(sid)
+        self.assertFalse((root / assets[0][2]).exists())
+        with self.app.app_context():
+            self.assertEqual(4, len(get_db_session().get(PeSummary, sid).assets))
+        with self.client.session_transaction() as session:
+            session.clear()
+        self.assertEqual(404, self.client.get(f"/pe-summaries/{sid}").status_code)
+        for mode in ("view", "download", "preview", "original"):
+            self.assertEqual(404, self.client.get(f"/pe-summaries/{sid}/assets/{assets[1][0]}/{mode}").status_code)
+
+    def test_failed_image_edit_preserves_existing_files_and_metadata(self):
+        self.create_summary()
+        with self.app.app_context():
+            summary = get_db_session().scalar(select(PeSummary))
+            sid, title = summary.id, summary.title
+            before = [(a.id, a.stored_name) for a in summary.assets]
+        response = self.post_images([(BytesIO(self.image_bytes()), "good.png", "image/png"),
+            (BytesIO(b"broken"), "bad.webp", "image/webp")], sid, delete_asset=str(before[0][0]))
+        self.assertEqual(200, response.status_code)
+        with self.app.app_context():
+            summary = get_db_session().get(PeSummary, sid)
+            self.assertEqual(title, summary.title)
+            self.assertEqual(before, [(a.id, a.stored_name) for a in summary.assets])
+        root = Path(self.app.config["PE_SUMMARY_UPLOAD_ROOT"]) / str(sid)
+        self.assertTrue(all((root / name).is_file() for _, name in before))
+        self.assertEqual([], list(root.glob("*.png")))
+
+    def test_image_validation_and_atomic_cleanup(self):
+        from unittest.mock import patch
+        png = self.image_bytes()
+        bad_files = [(png, "fake.jpg", "image/jpeg"), (png, "fake.png", "text/html"),
+                     (b"<svg/>", "fake.png", "image/png"), (png[:32], "broken.png", "image/png"),
+                     (png, "fake.svg", "image/svg+xml"), (b"x" * (1024 * 1024 + 1), "large.png", "image/png")]
+        for payload, name, mime in bad_files:
+            with self.subTest(name=name, mime=mime):
+                self.assertEqual(200, self.post_images([(BytesIO(png), "good.png", "image/png"),
+                    (BytesIO(payload), name, mime)]).status_code)
+                with self.app.app_context():
+                    self.assertIsNone(get_db_session().scalar(select(PeSummary)))
+                self.assertEqual([], list(Path(self.app.config["PE_SUMMARY_UPLOAD_ROOT"]).rglob("*.png")))
+        with patch("ictlab.pe_summary_files.MAX_IMAGE_PIXELS", 10):
+            self.assertEqual(200, self.post_images([(BytesIO(png), "big.png", "image/png")]).status_code)
+        self.assertEqual(200, self.post_images([(BytesIO(png), f"{i}.png", "image/png") for i in range(6)]).status_code)
 
     def test_admin_uploads_multiple_files_and_public_can_search_and_range_stream(self):
         response = self.create_summary()
